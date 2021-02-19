@@ -1,6 +1,6 @@
 {
   "name": "signalk-sonoff-ewelink",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Signal K Plugin For Sonoff/eWeLink devices",
   "main": "index.js",
   "scripts": {
