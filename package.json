@@ -6,7 +6,9 @@
   "scripts": {
     "format": "prettier-standard 'src/*.ts'",
     "build": "tsc",
-    "watch": "npm run build -- -w"
+    "watch": "npm run build -- -w",
+    "create-release": "github-create-release --owner sbender9 --repository signalk-sonoff-ewelink",
+    "release": "git tag -d v$npm_package_version ; git tag v$npm_package_version && git push --tags && git push && npm run create-release && npm publish"
   },
   "keywords": [
     "signalk-node-server-plugin"
@@ -20,9 +22,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/sbender9/signalk-sonoff"
+    "url": "https://github.com/sbender9/signalk-sonoff-ewelink"
   },
   "devDependencies": {
+    "@signalk/github-create-release": "^1.2.1",
     "@types/node": "^14.14.10",
     "prettier-standard": "^16.4.1",
     "typescript": "^4.1.2"
