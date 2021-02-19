@@ -1,7 +1,9 @@
 # signalk-sonoff-ewelink
 Signal K Plugin For Sonoff/eWeLink devices
 
-Support for eWeLink switches running the factory formware.
+Support for eWeLink switches running the factory firmware.
+
+Devices must first be added using the eWeLink app.
 
 ### Tested Hardware
 
