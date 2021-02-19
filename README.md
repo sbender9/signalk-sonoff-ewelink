@@ -7,7 +7,8 @@ Devices must first be added using the eWeLink app.
 
 ### Tested Hardware
 
-- [Sonoff 4chpro r3](https://sonoff.tech/product/wifi-diy-smart-switches/4chr3-4chpror3)
+- [Sonoff 4CH Pro R3](https://sonoff.tech/product/wifi-diy-smart-switches/4chr3-4chpror3)
+- Sonoff 4CH Pro R2
 
 It should work with other Sonoff/eWeLink switches, but no others have been tested.
 
