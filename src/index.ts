@@ -161,6 +161,27 @@ export default function (app: any) {
         })
       }
       return schema
+    },
+
+    uiSchema: () => {
+      const uiSchema:any = {
+        password: {
+          "ui:widget": "password"
+        }
+      }
+      if ( devicesCache ) {
+        devicesCache.forEach((device:any) => {
+          uiSchema[`Device ID ${device.deviceid}`] = {
+            'ui:field': 'collapsible',
+            collapse: {
+              field: 'ObjectField',
+              wrapClassName: 'panel-group'
+            }
+          }
+        })
+      }
+      console.log('uiSchem: ' + JSON.stringify(uiSchema, null, 2))
+      return uiSchema
     }
   }
   
@@ -526,5 +547,6 @@ interface Plugin {
   id: string
   name: string
   description: string
-  schema: any
+  schema: any,
+  uiSchema: any
 }
