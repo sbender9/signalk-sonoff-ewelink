@@ -7,9 +7,9 @@ Support for eWeLink switches running the factory formware.
 
 - [Sonoff 4chpro r3](https://sonoff.tech/product/wifi-diy-smart-switches/4chr3-4chpror3)
 
-### How it works
-
 It should work with other Sonoff/eWeLink switches, but no others have been tested.
+
+### How it works
 
 The plugin can use only the eWeLink cloud to communicate with the device, or it can use local LAN mode
 
