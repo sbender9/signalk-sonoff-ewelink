@@ -55,7 +55,7 @@ export default function (app: any) {
         socket.close()
         socket = undefined
       }
-      if ( browser ) {
+      if (browser) {
         browser.stop()
         browser = undefined
       }
@@ -123,24 +123,14 @@ export default function (app: any) {
           return
         }
 
-        /*
-        const arpTablePath = path.join(app.getDataDirPath(), 'arp-table.json')
-        debug('saving arp table...')
-        await Zeroconf.saveArpTable({
-          file: arpTablePath,
-          ip: '192.168.3.1>'
-        });
-        const arpTable = await Zeroconf.loadArpTable(arpTablePath);
-        */
-
         connection = new ewelink({ devicesCache, arpTable })
-        //connection.deviceIPs = {}
-        getDevices(devicesCache)
 
+        getDevices(devicesCache, false)
+        
         debug('starting dnsd browser...')
         browser = dnssd
           .Browser(dnssd.tcp('ewelink'))
-          .on('serviceUp', dnsdUp)
+          .on('serviceUp', dnsdChanged)
           .on('serviceChanged', dnsdChanged)
           .start()
       } catch (err) {
@@ -162,7 +152,7 @@ export default function (app: any) {
           connection
             .getDevices()
             .then((devices: any) => {
-              getDevices(devices)
+              getDevices(devices, true)
             })
             .catch((err: any) => {
               error(err)
@@ -222,7 +212,7 @@ export default function (app: any) {
     })
   }
 
-  function getDevices (devices: any) {
+  function getDevices (devices: any, doSendDeltas:boolean) {
     devices.forEach((device: any) => {
       if (device.params && (device.params.switches || device.params.switch)) {
         const devicePath = `electrical.switches.${camelCase(device.name)}`
@@ -262,7 +252,9 @@ export default function (app: any) {
             )
           }
         }
-        sendDeltas(device.deviceid, device.params)
+        if ( doSendDeltas ) {
+          sendDeltas(device.deviceid, device.params)
+        }
       }
     })
   }
@@ -406,33 +398,26 @@ export default function (app: any) {
     return arpTable.find((entry: any) => entry.mac == mac)
   }
 
-  function updateIPAddress(deviceid:string, service:any) {
+  function updateIPAddress (deviceid: string, service: any) {
     if (service.addresses && service.addresses.length > 0) {
-      //connection.deviceIPs[deviceid] = service.addresses[0]
       const device = getCachedDevice(deviceid)
-      if ( device ) {
+      if (device) {
         const mac = device.extra.extra.staMac.toLowerCase()
         const arp = findArpTableEntry(mac)
-        if ( arp ) {
+        if (arp) {
           arp.ip = service.addresses[0]
         } else {
-          arpTable.push({ ip: service.addresses[0], mac})
+          arpTable.push({ ip: service.addresses[0], mac })
         }
       }
     }
-  }
-  
-  function dnsdUp (service: any) {
-    const deviceid = service.txt.id
-    debug('found device %s (%s)', service.name, deviceid)
-    updateIPAddress(deviceid, service)
   }
 
   function dnsdChanged (service: any) {
     const deviceid = service.txt.id
     const iv = service.txt.iv
 
-    debug('got dnsd change for device %s', deviceid)
+    debug('got dnsd for device %s (%s)', service.name, deviceid)
 
     const device = getCachedDevice(deviceid)
     if (!device) {
