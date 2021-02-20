@@ -20,6 +20,13 @@ const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
 const path = require('path')
 const dnssd = require('dnssd2')
 
+const APP_ID = "oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq"
+const APP_SECRET = "6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM"
+
+//const APP_ID = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
+//const APP_SECRET = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
+
+
 export default function (app: any) {
   const error = app.error
   const debug = app.debug
@@ -139,7 +146,7 @@ export default function (app: any) {
               }
             })
           } else {
-            schema.properties[`${device.deviceid}`] = {
+            schema.properties[`Device ID ${device.deviceid}`] = {
               type: 'object',
               properties: {
                 deviceName: {
@@ -151,6 +158,7 @@ export default function (app: any) {
                 displayName: {
                   type: 'string',
                   title: 'Display Name (meta)',
+                  default: device.name
                 },
                 switchPath: {
                   type: 'string',
@@ -192,7 +200,9 @@ export default function (app: any) {
       connection = new ewelink({
         email: props.userName,
         password: props.password,
-        region: props.region
+        region: props.region,
+        APP_ID,
+        APP_SECRET
       })
 
       try {
@@ -214,7 +224,7 @@ export default function (app: any) {
           return
         }
 
-        connection = new ewelink({ devicesCache, arpTable })
+        connection = new ewelink({ devicesCache, arpTable, APP_ID, APP_SECRET })
 
         getDevices(devicesCache, false)
         
@@ -232,7 +242,9 @@ export default function (app: any) {
       connection = new ewelink({
         email: props.userName,
         password: props.password,
-        region: props.region
+        region: props.region,
+        APP_ID,
+        APP_SECRET
       })
 
       connection
@@ -243,6 +255,7 @@ export default function (app: any) {
           connection
             .getDevices()
             .then((devices: any) => {
+              debug('found devices: %j', devices)
               devicesCache = devices
               getDevices(devices, true)
             })
@@ -262,11 +275,16 @@ export default function (app: any) {
               if (data.action) {
                 if (data.action === 'update') {
                   if (data.params) {
-                    sendDeltas(data, data.params)
+                    const device = getCachedDevice(data.deviceid)
+                    if ( device ) {
+                      sendDeltas(data, data.params)
+                    } else {
+                      error(`unknown device: ${data.deviceid}`)
+                    }
                   }
                 }
               }
-            })
+                })
             .then((sock: any) => {
               socket = sock
 
@@ -406,20 +424,22 @@ export default function (app: any) {
   function sendMeta(device:any) {
     let meta:any = []
 
+    const defConfig = getCachedDevice(device.deviceid)
+
     if (device.params.switches) {
       device.params.switches.forEach((channel: any) => {
         const bankConfig = props[`Device ID ${device.deviceid}`] || {}
         const config = bankConfig[`Channel ${channel.outlet}`] || {}
         meta.push({
-          path: getBankSwitchPath(device, channel.outlet),
-          value: { displayName: config.displayName, units: 'bool' }
+          path: getBankSwitchPath(defConfig, channel.outlet),
+          value: { displayName: config.displayName || defConfig.name, units: 'bool' }
         })
       })
     } else if (device.params.switch) {
       const config = props[`Device ID ${device.deviceid}`] || {}
       meta.push( {
-        path: getSwitchPath(device),
-        value: { displayName: config.displayName, units: 'bool' }
+        path: getSwitchPath(defConfig),
+        value: { displayName: config.displayName || defConfig.name , units: 'bool' }
       })
     }
 
@@ -504,6 +524,7 @@ export default function (app: any) {
       const msg = 'new device found, please restart the plugin'
       error(msg)
       app.setPluginError(msg)
+      return
     }
     updateIPAddress(deviceid, service)
     try {
