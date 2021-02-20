@@ -110,7 +110,7 @@ export default function (app: any) {
                 bankPath: {
                   type: 'string',
                   title: 'Bank Path',
-                  default: device.name,
+                  default: camelCase(device.name),
                   description: 'Used to generate the path name, ie. electrical.switches.${bankPath}.0.state'
                 }
               }
@@ -118,6 +118,8 @@ export default function (app: any) {
             schema.properties[`Device ID ${device.deviceid}`] = devSchema
 
             device.params.switches.forEach((sw:any) => {
+              const name = device.tags?.ck_channel_name[sw.outlet.toString()]  ?? sw.outlet.toString()
+              
               devSchema.properties[`Channel ${sw.outlet}`] = {
                 type: 'object',
                 title: `Channel ${sw.outlet+1}`,
@@ -125,11 +127,12 @@ export default function (app: any) {
                   displayName: {
                     type: 'string',
                     title: 'Display Name (meta)',
+                    default: name
                   },
                   switchPath: {
                     type: 'string',
                     title: 'Switch Path',
-                    default: '' + sw.outlet,
+                    default: camelCase(name),
                     description: 'Used to generate the path name, ie. electrical.switches.bank.${switchPath}.state'
                   }
                 }
@@ -152,7 +155,7 @@ export default function (app: any) {
                 switchPath: {
                   type: 'string',
                   title: 'Switch Path',
-                  default: device.name,
+                  default: camelCase(device.name),
                   description: 'Used to generate the path name, ie electrical.switches.${switchPath}.state'
                 }
               }
@@ -180,7 +183,6 @@ export default function (app: any) {
           }
         })
       }
-      console.log('uiSchem: ' + JSON.stringify(uiSchema, null, 2))
       return uiSchema
     }
   }
@@ -291,8 +293,6 @@ export default function (app: any) {
   function getDevices (devices: any, doSendDeltas:boolean) {
     devices.forEach((device: any) => {
       if (device.params && (device.params.switches || device.params.switch)) {
-        const devicePath = `electrical.switches.${camelCase(device.name)}`
-
         if (device.params.switches) {
           device.params.switches.forEach((channel: any) => {
             const switchPath = getBankSwitchPath(device, channel.outlet)
@@ -529,13 +529,17 @@ export default function (app: any) {
 
   function getSwitchPath(device:any) {
     const config = props[`Device ID ${device.deviceid}`] || {}
-    return `electrical.switches.${config.switchPath || device.name}.state`
+    return `electrical.switches.${config.switchPath || camelCase(device.name)}.state`
   }
 
   function getBankSwitchPath(device:any, channel:number) {
     const bankConfig = props[`Device ID ${device.deviceid}`] || {}
-    const config = bankConfig[`Channel ${channel}`] || {}
-    return `electrical.switches.${bankConfig.bankPath || device.name}.${config.switchPath || channel}.state`
+    let path = bankConfig[`Channel ${channel}`]?.switchPath
+    let cloud = device.tags?.ck_channel_name[channel.toString()]
+    if ( !path && cloud ) {
+      path = camelCase(cloud)
+    }
+    return `electrical.switches.${bankConfig.bankPath || camelCase(device.name)}.${path || channel}.state`
   }
 
   return plugin
