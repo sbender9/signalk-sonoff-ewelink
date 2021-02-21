@@ -125,7 +125,7 @@ export default function (app: any) {
             schema.properties[`Device ID ${device.deviceid}`] = devSchema
 
             device.params.switches.forEach((sw:any) => {
-              const name = device.tags?.ck_channel_name[sw.outlet.toString()]  ?? sw.outlet.toString()
+              const name = device.tags?.ck_channel_name ? device.tags.ck_channel_name[sw.outlet.toString()]  : sw.outlet.toString()
               
               devSchema.properties[`Channel ${sw.outlet}`] = {
                 type: 'object',
@@ -556,7 +556,7 @@ export default function (app: any) {
   function getBankSwitchPath(device:any, channel:number) {
     const bankConfig = props[`Device ID ${device.deviceid}`] || {}
     let path = bankConfig[`Channel ${channel}`]?.switchPath
-    let cloud = device.tags?.ck_channel_name[channel.toString()]
+    let cloud = device.tags?.ck_channel_name ? device.tags?.ck_channel_name[channel.toString()] : undefined
     if ( !path && cloud ) {
       path = camelCase(cloud)
     }
