@@ -20,12 +20,11 @@ const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
 const path = require('path')
 const dnssd = require('dnssd2')
 
-const APP_ID = "oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq"
-const APP_SECRET = "6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM"
+const APP_ID = 'oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq'
+const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
 
 //const APP_ID = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
 //const APP_SECRET = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
-
 
 export default function (app: any) {
   const error = app.error
@@ -73,9 +72,9 @@ export default function (app: any) {
     id: 'signalk-sonoff-ewelink',
     name: 'Sonoff/eWeLink',
     description: 'Signal K Plugin For Sonoff/eWeLink devices',
-    
+
     schema: () => {
-      const schema:any = {
+      const schema: any = {
         type: 'object',
         properties: {
           userName: {
@@ -101,11 +100,11 @@ export default function (app: any) {
           }
         }
       }
-      
-      if ( devicesCache ) {
-        devicesCache.forEach((device:any) => {
-          if ( device.params.switches ) {
-            const devSchema:any = {
+
+      if (devicesCache) {
+        devicesCache.forEach((device: any) => {
+          if (device.params.switches) {
+            const devSchema: any = {
               type: 'object',
               properties: {
                 deviceName: {
@@ -118,18 +117,21 @@ export default function (app: any) {
                   type: 'string',
                   title: 'Bank Path',
                   default: camelCase(device.name),
-                  description: 'Used to generate the path name, ie. electrical.switches.${bankPath}.0.state'
+                  description:
+                    'Used to generate the path name, ie. electrical.switches.${bankPath}.0.state'
                 }
               }
             }
             schema.properties[`Device ID ${device.deviceid}`] = devSchema
 
-            device.params.switches.forEach((sw:any) => {
-              const name = device.tags?.ck_channel_name ? device.tags.ck_channel_name[sw.outlet.toString()]  : sw.outlet.toString()
-              
+            device.params.switches.forEach((sw: any) => {
+              const name = device.tags?.ck_channel_name
+                ? device.tags.ck_channel_name[sw.outlet.toString()]
+                : sw.outlet.toString()
+
               devSchema.properties[`Channel ${sw.outlet}`] = {
                 type: 'object',
-                title: `Channel ${sw.outlet+1}`,
+                title: `Channel ${sw.outlet + 1}`,
                 properties: {
                   displayName: {
                     type: 'string',
@@ -145,7 +147,8 @@ export default function (app: any) {
                     type: 'string',
                     title: 'Switch Path',
                     default: camelCase(name),
-                    description: 'Used to generate the path name, ie. electrical.switches.bank.${switchPath}.state'
+                    description:
+                      'Used to generate the path name, ie. electrical.switches.bank.${switchPath}.state'
                   }
                 }
               }
@@ -174,7 +177,8 @@ export default function (app: any) {
                   type: 'string',
                   title: 'Switch Path',
                   default: camelCase(device.name),
-                  description: 'Used to generate the path name, ie electrical.switches.${switchPath}.state'
+                  description:
+                    'Used to generate the path name, ie electrical.switches.${switchPath}.state'
                 }
               }
             }
@@ -185,13 +189,13 @@ export default function (app: any) {
     },
 
     uiSchema: () => {
-      const uiSchema:any = {
+      const uiSchema: any = {
         password: {
-          "ui:widget": "password"
+          'ui:widget': 'password'
         }
       }
-      if ( devicesCache ) {
-        devicesCache.forEach((device:any) => {
+      if (devicesCache) {
+        devicesCache.forEach((device: any) => {
           uiSchema[`Device ID ${device.deviceid}`] = {
             'ui:field': 'collapsible',
             collapse: {
@@ -204,7 +208,7 @@ export default function (app: any) {
       return uiSchema
     }
   }
-  
+
   async function openConnection () {
     if (props.lanMode) {
       connection = new ewelink({
@@ -237,7 +241,7 @@ export default function (app: any) {
         connection = new ewelink({ devicesCache, arpTable, APP_ID, APP_SECRET })
 
         getDevices(devicesCache, false)
-        
+
         debug('starting dnsd browser...')
         browser = dnssd
           .Browser(dnssd.tcp('ewelink'))
@@ -286,7 +290,7 @@ export default function (app: any) {
                 if (data.action === 'update') {
                   if (data.params) {
                     const device = getCachedDevice(data.deviceid)
-                    if ( device ) {
+                    if (device) {
                       sendDeltas(data, data.params)
                     } else {
                       error(`unknown device: ${data.deviceid}`)
@@ -294,7 +298,7 @@ export default function (app: any) {
                   }
                 }
               }
-                })
+            })
             .then((sock: any) => {
               socket = sock
 
@@ -318,7 +322,7 @@ export default function (app: any) {
     }
   }
 
-  function getDevices (devices: any, doSendDeltas:boolean) {
+  function getDevices (devices: any, doSendDeltas: boolean) {
     devices.forEach((device: any) => {
       if (device.params && (device.params.switches || device.params.switch)) {
         if (device.params.switches) {
@@ -355,7 +359,7 @@ export default function (app: any) {
             putsRegistred[switchPath] = true
           }
         }
-        if ( doSendDeltas ) {
+        if (doSendDeltas) {
           sendDeltas(device, device.params)
         }
       }
@@ -431,25 +435,51 @@ export default function (app: any) {
     return { state: 'PENDING' }
   }
 
-  function sendMeta(device:any) {
-    let meta:any = []
+  function sendMeta (device: any) {
+    let meta: any = []
 
     if (device.params.switches) {
       device.params.switches.forEach((channel: any) => {
         const switchProps = getSwitchProps(device, channel.outlet)
-        if  ( !switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+        if (
+          !switchProps ||
+          typeof switchProps.enabled === 'undefined' ||
+          switchProps.enabled
+        ) {
           meta.push({
             path: getBankSwitchPath(device, channel.outlet),
-            value: { displayName: switchProps?.displayName || device.name, units: 'bool', order: channel.outlet }
+            value: {
+              displayName: switchProps?.displayName || device.name,
+              units: 'bool',
+              order: channel.outlet
+            }
+          })
+          meta.push({
+            path: getBankSwitchPath(device, channel.outlet, null),
+            value: {
+              displayName: switchProps?.displayName || device.name,
+              order: channel.outlet
+            }
           })
         }
       })
     } else if (device.params.switch) {
       const switchProps = getSwitchProps(device)
-      if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
-        meta.push( {
+      if (
+        !switchProps ||
+        typeof switchProps.enabled === 'undefined' ||
+        switchProps.enabled
+      ) {
+        meta.push({
           path: getSwitchPath(device),
-          value: { displayName: switchProps?.displayName || device.name , units: 'bool' }
+          value: {
+            displayName: switchProps?.displayName || device.name,
+            units: 'bool'
+          }
+        })
+        meta.push({
+          path: getSwitchPath(device, null),
+          value: { displayName: switchProps?.displayName || device.name }
         })
       }
     }
@@ -469,33 +499,43 @@ export default function (app: any) {
   function sendDeltas (device: any, params: any) {
     let values
 
-    if ( !sentMetaDevices[device.deviceid] ) {
+    if (!sentMetaDevices[device.deviceid]) {
       sendMeta(device)
       sentMetaDevices[device.deviceid] = true
     }
 
     if (params.switches) {
-      values = params.switches.map((channel: any) => {
-        const switchProps = getSwitchProps(device, channel.outlet)
-        if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
-          return [
-            {
-              path: getBankSwitchPath(device, channel.outlet),
-              value: channel.switch === 'on' ? 1 : 0
-            },
-            {
-              path: getBankSwitchPath(device, channel.outlet, 'order'),
-              value: channel.outlet
-            }
-          ]
-        } else {
-          return null
-        }
-      }).filter((kp:any) => kp != null)
-      values = [].concat.apply([], values);
+      values = params.switches
+        .map((channel: any) => {
+          const switchProps = getSwitchProps(device, channel.outlet)
+          if (
+            !switchProps ||
+            typeof switchProps.enabled === 'undefined' ||
+            switchProps.enabled
+          ) {
+            return [
+              {
+                path: getBankSwitchPath(device, channel.outlet),
+                value: channel.switch === 'on' ? 1 : 0
+              },
+              {
+                path: getBankSwitchPath(device, channel.outlet, 'order'),
+                value: channel.outlet
+              }
+            ]
+          } else {
+            return null
+          }
+        })
+        .filter((kp: any) => kp != null)
+      values = [].concat.apply([], values)
     } else if (params.switch) {
       const switchProps = getSwitchProps(device)
-      if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+      if (
+        !switchProps ||
+        typeof switchProps.enabled === 'undefined' ||
+        switchProps.enabled
+      ) {
         values = [
           {
             path: getSwitchPath(device),
@@ -574,8 +614,8 @@ export default function (app: any) {
     return JSON.parse(decryptionData(encoded, deviceKey, iv))
   }
 
-  function getSwitchProps(device:any, channel:any = undefined) {
-    if ( device.params.switches ) {
+  function getSwitchProps (device: any, channel: any = undefined) {
+    if (device.params.switches) {
       const bankConfig = props[`Device ID ${device.deviceid}`] || {}
       return bankConfig[`Channel ${channel}`]
     } else {
@@ -583,19 +623,28 @@ export default function (app: any) {
     }
   }
 
-  function getSwitchPath(device:any) {
+  function getSwitchPath (device: any, key: any = 'state') {
     const config = props[`Device ID ${device.deviceid}`] || {}
-    return `electrical.switches.${config.switchPath || camelCase(device.name)}.state`
+    return `electrical.switches.${config.switchPath || camelCase(device.name)}${
+      key ? '.' + key : ''
+    }`
   }
 
-  function getBankSwitchPath(device:any, channel:number, key='state') {
+  function getBankSwitchPath (
+    device: any,
+    channel: number,
+    key: any = 'state'
+  ) {
     const bankConfig = props[`Device ID ${device.deviceid}`] || {}
     let path = bankConfig[`Channel ${channel}`]?.switchPath
-    let cloud = device.tags?.ck_channel_name ? device.tags?.ck_channel_name[channel.toString()] : undefined
-    if ( !path && cloud ) {
+    let cloud = device.tags?.ck_channel_name
+      ? device.tags?.ck_channel_name[channel.toString()]
+      : undefined
+    if (!path && cloud) {
       path = camelCase(cloud)
     }
-    return `electrical.switches.${bankConfig.bankPath || camelCase(device.name)}.${path || channel}.${key}`
+    return `electrical.switches.${bankConfig.bankPath ||
+      camelCase(device.name)}.${path || channel}${key ? '.' + key : ''}`
   }
 
   return plugin
@@ -607,6 +656,6 @@ interface Plugin {
   id: string
   name: string
   description: string
-  schema: any,
+  schema: any
   uiSchema: any
 }
