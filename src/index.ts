@@ -136,6 +136,11 @@ export default function (app: any) {
                     title: 'Display Name (meta)',
                     default: name
                   },
+                  enabled: {
+                    type: 'boolean',
+                    title: 'Enabled',
+                    default: true
+                  },
                   switchPath: {
                     type: 'string',
                     title: 'Switch Path',
@@ -154,6 +159,11 @@ export default function (app: any) {
                   title: 'Name',
                   default: device.name,
                   readOnly: true
+                },
+                enabled: {
+                  type: 'boolean',
+                  title: 'Enabled',
+                  default: true
                 },
                 displayName: {
                   type: 'string',
@@ -424,23 +434,24 @@ export default function (app: any) {
   function sendMeta(device:any) {
     let meta:any = []
 
-    const defConfig = getCachedDevice(device.deviceid)
-
     if (device.params.switches) {
       device.params.switches.forEach((channel: any) => {
-        const bankConfig = props[`Device ID ${device.deviceid}`] || {}
-        const config = bankConfig[`Channel ${channel.outlet}`] || {}
-        meta.push({
-          path: getBankSwitchPath(defConfig, channel.outlet),
-          value: { displayName: config.displayName || defConfig.name, units: 'bool' }
-        })
+        const switchProps = getSwitchProps(device, channel.outlet)
+        if  ( !switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+          meta.push({
+            path: getBankSwitchPath(device, channel.outlet),
+            value: { displayName: switchProps?.displayName || device.name, units: 'bool' }
+          })
+        }
       })
     } else if (device.params.switch) {
-      const config = props[`Device ID ${device.deviceid}`] || {}
-      meta.push( {
-        path: getSwitchPath(defConfig),
-        value: { displayName: config.displayName || defConfig.name , units: 'bool' }
-      })
+      const switchProps = getSwitchProps(device)
+      if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+        meta.push( {
+          path: getSwitchPath(device),
+          value: { displayName: switchProps?.displayName || device.name , units: 'bool' }
+        })
+      }
     }
 
     if (meta.length) {
@@ -465,18 +476,26 @@ export default function (app: any) {
 
     if (params.switches) {
       values = params.switches.map((channel: any) => {
-        return {
-          path: getBankSwitchPath(device, channel.outlet),
-          value: channel.switch === 'on' ? 1 : 0
+        const switchProps = getSwitchProps(device, channel.outlet)
+        if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+          return {
+            path: getBankSwitchPath(device, channel.outlet),
+            value: channel.switch === 'on' ? 1 : 0
+          }
+        } else {
+          return null
         }
-      })
+      }).filter((kp:any) => kp != null)
     } else if (params.switch) {
-      values = [
-        {
-          path: getSwitchPath(device),
-          value: params.switch === 'on' ? 1 : 0
-        }
-      ]
+      const switchProps = getSwitchProps(device)
+      if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
+        values = [
+          {
+            path: getSwitchPath(device),
+            value: params.switch === 'on' ? 1 : 0
+          }
+        ]
+      }
     }
 
     if (values) {
@@ -546,6 +565,15 @@ export default function (app: any) {
     }
 
     return JSON.parse(decryptionData(encoded, deviceKey, iv))
+  }
+
+  function getSwitchProps(device:any, channel:any = undefined) {
+    if ( device.params.switches ) {
+      const bankConfig = props[`Device ID ${device.deviceid}`] || {}
+      return bankConfig[`Channel ${channel}`]
+    } else {
+      return props[`Device ID ${device.deviceid}`] || {}
+    }
   }
 
   function getSwitchPath(device:any) {
