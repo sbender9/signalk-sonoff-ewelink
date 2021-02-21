@@ -20,6 +20,16 @@ const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
 const path = require('path')
 const dnssd = require('dnssd2')
 
+let mdns:any
+
+try
+{
+  mdns = require('mdns')
+}
+catch (err)
+{
+}
+
 const APP_ID = 'oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq'
 const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
 
@@ -251,9 +261,14 @@ export default function (app: any) {
         getDevices(devicesCache, false)
 
         debug('starting dnsd browser...')
-        browser = dnssd
-          .Browser(dnssd.tcp('ewelink'))
-          .on('serviceUp', dnsdChanged)
+        if ( mdns ) {
+          browser = mdns
+            .createBrowser(mdns.tcp('ewelink'))
+        } else {
+          browser = dnssd
+            .Browser(dnssd.tcp('ewelink'))
+        }
+        browser.on('serviceUp', dnsdChanged)
           .on('serviceChanged', dnsdChanged)
           .start()
       } catch (err) {
@@ -592,8 +607,10 @@ export default function (app: any) {
   }
 
   function dnsdChanged (service: any) {
-    const deviceid = service.txt.id
-    const iv = service.txt.iv
+    console.log(JSON.stringify(service, null, 2))
+    const txt = service.txt || service.txtRecord
+    const deviceid = txt.id
+    const iv = txt.iv
 
     debug('got dnsd for device %s (id:%s)', service.name, deviceid)
 
@@ -606,7 +623,7 @@ export default function (app: any) {
     }
     updateIPAddress(deviceid, service)
     try {
-      const info = decryptMessage(service.txt, device.devicekey, iv)
+      const info = decryptMessage(txt, device.devicekey, iv)
       sendDeltas(device, info)
     } catch (err) {
       error(err)
