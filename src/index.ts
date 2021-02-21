@@ -138,6 +138,10 @@ export default function (app: any) {
                     title: 'Display Name (meta)',
                     default: name
                   },
+                  abbrev: {
+                    type: 'string',
+                    title: 'Abbreviated Name (meta)'
+                  },
                   enabled: {
                     type: 'boolean',
                     title: 'Enabled',
@@ -172,6 +176,10 @@ export default function (app: any) {
                   type: 'string',
                   title: 'Display Name (meta)',
                   default: device.name
+                },
+                abbrev: {
+                  type: 'string',
+                  title: 'Abbreviated Name (meta)'
                 },
                 switchPath: {
                   type: 'string',
@@ -450,6 +458,7 @@ export default function (app: any) {
             path: getBankSwitchPath(device, channel.outlet),
             value: {
               displayName: switchProps?.displayName || device.name,
+              abbrev: switchProps?.abbrev,
               units: 'bool',
               order: channel.outlet
             }
@@ -458,6 +467,7 @@ export default function (app: any) {
             path: getBankSwitchPath(device, channel.outlet, null),
             value: {
               displayName: switchProps?.displayName || device.name,
+              abbrev: switchProps?.abbrev,
               order: channel.outlet
             }
           })
@@ -474,11 +484,13 @@ export default function (app: any) {
           path: getSwitchPath(device),
           value: {
             displayName: switchProps?.displayName || device.name,
+            abbrev: switchProps?.abbrev,
             units: 'bool'
           }
         })
         meta.push({
           path: getSwitchPath(device, null),
+          abbrev: switchProps?.abbrev,
           value: { displayName: switchProps?.displayName || device.name }
         })
       }
