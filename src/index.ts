@@ -107,6 +107,11 @@ export default function (app: any) {
             type: 'boolean',
             title: 'Use LAN Mode',
             default: true
+          },
+          useMdns: {
+            type: 'boolean',
+            title: 'Use MDNS Package If available',
+            default: false
           }
         }
       }
@@ -261,7 +266,7 @@ export default function (app: any) {
         getDevices(devicesCache, false)
 
         debug('starting dnsd browser...')
-        if ( mdns ) {
+        if ( mdns && props.useMdns ) {
           browser = mdns
             .createBrowser(mdns.tcp('ewelink'))
         } else {
@@ -607,8 +612,11 @@ export default function (app: any) {
   }
 
   function dnsdChanged (service: any) {
-    console.log(JSON.stringify(service, null, 2))
     const txt = service.txt || service.txtRecord
+    if ( !txt || !txt.id || !txt.iv  ) {
+      error('invalid mdns record')
+      error(JSON.stringify(service, null, 2))
+    }
     const deviceid = txt.id
     const iv = txt.iv
 
