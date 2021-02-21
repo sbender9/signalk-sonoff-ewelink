@@ -440,7 +440,7 @@ export default function (app: any) {
         if  ( !switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
           meta.push({
             path: getBankSwitchPath(device, channel.outlet),
-            value: { displayName: switchProps?.displayName || device.name, units: 'bool' }
+            value: { displayName: switchProps?.displayName || device.name, units: 'bool', order: channel.outlet }
           })
         }
       })
@@ -478,14 +478,21 @@ export default function (app: any) {
       values = params.switches.map((channel: any) => {
         const switchProps = getSwitchProps(device, channel.outlet)
         if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
-          return {
-            path: getBankSwitchPath(device, channel.outlet),
-            value: channel.switch === 'on' ? 1 : 0
-          }
+          return [
+            {
+              path: getBankSwitchPath(device, channel.outlet),
+              value: channel.switch === 'on' ? 1 : 0
+            },
+            {
+              path: getBankSwitchPath(device, channel.outlet, 'order'),
+              value: channel.outlet
+            }
+          ]
         } else {
           return null
         }
       }).filter((kp:any) => kp != null)
+      values = [].concat.apply([], values);
     } else if (params.switch) {
       const switchProps = getSwitchProps(device)
       if  (!switchProps || typeof switchProps.enabled === 'undefined' || switchProps.enabled) {
@@ -581,14 +588,14 @@ export default function (app: any) {
     return `electrical.switches.${config.switchPath || camelCase(device.name)}.state`
   }
 
-  function getBankSwitchPath(device:any, channel:number) {
+  function getBankSwitchPath(device:any, channel:number, key='state') {
     const bankConfig = props[`Device ID ${device.deviceid}`] || {}
     let path = bankConfig[`Channel ${channel}`]?.switchPath
     let cloud = device.tags?.ck_channel_name ? device.tags?.ck_channel_name[channel.toString()] : undefined
     if ( !path && cloud ) {
       path = camelCase(cloud)
     }
-    return `electrical.switches.${bankConfig.bankPath || camelCase(device.name)}.${path || channel}.state`
+    return `electrical.switches.${bankConfig.bankPath || camelCase(device.name)}.${path || channel}.${key}`
   }
 
   return plugin
