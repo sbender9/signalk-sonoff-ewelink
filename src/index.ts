@@ -20,27 +20,26 @@ const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
 const path = require('path')
 const dnssd = require('dnssd2')
 
-let mdns:any
+let mdns: any
 
-try
-{
+try {
   mdns = require('mdns')
-}
-catch (err)
-{
-}
+} catch (err) {}
 
 const APP_ID = 'oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq'
 const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
 
-//const APP_ID = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
-//const APP_SECRET = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
+const APP_ID_WS = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
+const APP_SECRET_WS = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
 
 export default function (app: any) {
   const error = app.error
   const debug = app.debug
   let sentMetaDevices: any = {}
-  let connection: any
+  let lanConnection: any
+  let cloudConnection: any
+  let anyCloudOnlyDevices: boolean
+  let cloudOnlyByDevice: any = {}
   let socket: any
   let pollInterval: any
   let putsRegistred: any = {}
@@ -77,6 +76,7 @@ export default function (app: any) {
       putsRegistred = {}
       sentMetaDevices = {}
       devicesCache = undefined
+      cloudOnlyByDevice = {}
     },
 
     id: 'signalk-sonoff-ewelink',
@@ -128,12 +128,24 @@ export default function (app: any) {
                   default: device.name,
                   readOnly: true
                 },
+                enabled: {
+                  type: 'boolean',
+                  title: 'Enabled',
+                  default: true
+                },
                 bankPath: {
                   type: 'string',
                   title: 'Bank Path',
                   default: camelCase(device.name),
                   description:
                     'Used to generate the path name, ie. electrical.switches.${bankPath}.0.state'
+                },
+                forceCloudMode: {
+                  type: 'boolean',
+                  title: 'Force Cloud Mode',
+                  default: false,
+                  description:
+                    'Use the cloud for this device even if LAN mode is on'
                 }
               }
             }
@@ -202,6 +214,52 @@ export default function (app: any) {
                   default: camelCase(device.name),
                   description:
                     'Used to generate the path name, ie electrical.switches.${switchPath}.state'
+                },
+                forceCloudMode: {
+                  type: 'boolean',
+                  title: 'Force Cloud Mode',
+                  default: false,
+                  description:
+                    'Use the cloud for this device even if LAN mode is on'
+                }
+              }
+            }
+            if (device.uiid == l1Light) {
+              schema.properties[
+                `Device ID ${device.deviceid}`
+              ].properties.presets = {
+                title: 'Presets',
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      title: 'Name'
+                    },
+                    colorR: {
+                      type: 'number',
+                      title: 'Red',
+                      default: 255
+                    },
+                    colorG: {
+                      type: 'number',
+                      title: 'Green',
+                      default: 255
+                    },
+                    colorB: {
+                      type: 'number',
+                      title: 'Blue',
+                      default: 255
+                    },
+                    bright: {
+                      type: 'number',
+                      title: 'Brightness',
+                      description:
+                        'Number between 1-100. Set to 0 to preserve current brightness',
+                      default: 100
+                    }
+                  }
                 }
               }
             }
@@ -232,159 +290,315 @@ export default function (app: any) {
     }
   }
 
-  async function openConnection () {
-    if (props.lanMode) {
-      connection = new ewelink({
-        email: props.userName,
-        password: props.password,
-        region: props.region,
-        APP_ID,
-        APP_SECRET
-      })
+  async function startLanMode () {
+    try {
+      const deviceCachePath = path.join(
+        app.getDataDirPath(),
+        'devices-cache.json'
+      )
 
+      debug('saving device cache...')
       try {
-        const deviceCachePath = path.join(
-          app.getDataDirPath(),
-          'devices-cache.json'
-        )
+        await cloudConnection.saveDevicesCache(deviceCachePath)
+      } catch (err) {
+        error(err)
+      }
 
-        debug('saving device cache...')
-        try {
-          await connection.saveDevicesCache(deviceCachePath)
-        } catch (err) {
-          error(err)
-        }
+      if (!devicesCache) {
         devicesCache = await Zeroconf.loadCachedDevices(deviceCachePath)
         if (devicesCache.error) {
           error(devicesCache.error)
           app.setPluginError(devicesCache.error)
           return
         }
-
-        connection = new ewelink({ devicesCache, arpTable, APP_ID, APP_SECRET })
-
-        getDevices(devicesCache, false)
-
-        debug('starting dnsd browser...')
-        if ( mdns && props.useMdns ) {
-          browser = mdns
-            .createBrowser(mdns.tcp('ewelink'))
-        } else {
-          browser = dnssd
-            .Browser(dnssd.tcp('ewelink'))
-        }
-        browser.on('serviceUp', dnsdChanged)
-          .on('serviceChanged', dnsdChanged)
-          .start()
-      } catch (err) {
-        error(err)
-        app.setPluginError(err.message)
       }
-    } else {
-      connection = new ewelink({
-        email: props.userName,
-        password: props.password,
-        region: props.region,
+
+      lanConnection = new ewelink({
+        devicesCache,
+        arpTable,
         APP_ID,
         APP_SECRET
       })
 
-      connection
-        .getCredentials()
-        .then(() => {
-          app.setPluginStatus('Connected to Cloud')
+      getDevices(devicesCache, false)
 
-          connection
-            .getDevices()
-            .then((devices: any) => {
-              debug('found devices: %j', devices)
-              devicesCache = devices
-              getDevices(devices, true)
-            })
-            .catch((err: any) => {
-              error(err)
-              app.setPluginError(err.message)
-            })
+      debug('starting dnsd browser...')
+      if (mdns && props.useMdns) {
+        browser = mdns.createBrowser(mdns.tcp('ewelink'))
+      } else {
+        browser = dnssd.Browser(dnssd.tcp('ewelink'))
+      }
+      browser
+        .on('serviceUp', dnsdChanged)
+        .on('serviceChanged', dnsdChanged)
+        .start()
+    } catch (err) {
+      error(err)
+      app.setPluginError(err.message)
+    }
+  }
 
-          connection
-            .openWebSocket((dataString: any) => {
-              app.debug(dataString)
-              if (dataString === 'pong') {
-                return
-              }
+  async function openConnection () {
+    cloudConnection = new ewelink({
+      email: props.userName,
+      password: props.password,
+      region: props.region,
+      APP_ID,
+      APP_SECRET
+    })
 
-              const data = JSON.parse(dataString)
-              if (data.action) {
-                if (data.action === 'update') {
-                  if (data.params) {
-                    const device = getCachedDevice(data.deviceid)
-                    if (device) {
-                      sendDeltas(data, data.params)
-                    } else {
-                      error(`unknown device: ${data.deviceid}`)
+    try {
+      await cloudConnection.getCredentials()
+
+      let devices: any = await cloudConnection.getDevices()
+      debug('found devices: %j', devices)
+      devicesCache = devices
+      getDevices(devices, true)
+    } catch (err) {
+      error(err)
+    }
+
+    if (props.lanMode) {
+      await startLanMode()
+    }
+
+    if (devicesCache) {
+      devicesCache.forEach((device: any) => {
+        const switchProps = getDeviceProps(device)
+        let cloudOnly: boolean =
+          (!switchProps ||
+            typeof switchProps.enabled === 'undefined' ||
+            switchProps.enabled) &&
+          (cloudOnlyHardware.indexOf(device.uiid) !== -1 ||
+            switchProps?.forceCloudMode === true)
+        cloudOnlyByDevice[device.deviceid] = cloudOnly
+      })
+      anyCloudOnlyDevices = devicesCache.find(
+        (device: any) => cloudOnlyByDevice[device.deviceid] === true
+      )
+
+      if (props.lanMode && !anyCloudOnlyDevices) {
+        app.setPluginStatus('Using LAN mode only')
+      }
+
+      if (!props.lanMode || anyCloudOnlyDevices) {
+        cloudConnection = new ewelink({
+          email: props.userName,
+          password: props.password,
+          region: props.region,
+          APP_ID_WS,
+          APP_SECRET_WS
+        })
+
+        await cloudConnection.getCredentials()
+
+        app.setPluginStatus('Connected to Cloud')
+
+        cloudConnection
+          .openWebSocket((data: any) => {
+            app.debug(data)
+            if (typeof data === 'string') {
+              return
+            }
+
+            if (data.action) {
+              if (data.action === 'update') {
+                if (data.params) {
+                  const device = getCachedDevice(data.deviceid)
+                  if (device) {
+                    const deviceProps = getDeviceProps(device)
+                    if (
+                      !deviceProps ||
+                      typeof deviceProps === 'undefined' ||
+                      deviceProps.enabled
+                    ) {
+                      sendDeltas(device, data.params)
                     }
+                  } else {
+                    error(`unknown device: ${data.deviceid}`)
                   }
                 }
               }
-            })
-            .then((sock: any) => {
-              socket = sock
+            }
+          })
+          .then((sock: any) => {
+            socket = sock
 
-              socket.onclose = (err: any) => {
-                error('web socket closed: ' + err)
-              }
-            })
-            .catch((err: any) => {
-              error(err)
-              app.setPluginError(err.message)
-            })
+            socket.onclose = (err: any) => {
+              error('web socket closed: ' + err)
+            }
+          })
+          .catch((err: any) => {
+            error(err)
+            app.setPluginError(err.message)
+          })
+      }
+    }
+  }
+
+  function propHandler (
+    context: string,
+    path: string,
+    value: any,
+    device: any,
+    prop: string,
+    cb: any,
+    converter: any = null
+  ) {
+    let params: any = converter ? converter(value) : { [prop]: value }
+    cloudConnection
+      .setWSDeviceParams(device.deviceid, params)
+      .then((status: any) => {
+        debug('set status: %j', status)
+        cb({
+          state: 'COMPLETED',
+          statusCode: status.status === 'ok' ? 200 : 400
+        })
+      })
+      .catch((err: any) => {
+        error(err)
+        app.setPluginError(err.message)
+        cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
+      })
+    return { state: 'PENDING' }
+  }
+
+  function registerPutProp (device: any, prop: string, converter: any = null) {
+    const propPath = getSwitchPath(device, prop)
+
+    app.registerPutHandler(
+      'vessels.self',
+      propPath,
+      (context: string, path: string, value: any, cb: any) => {
+        return propHandler(context, path, value, device, prop, cb, converter)
+      }
+    )
+  }
+
+  function presetHandler (
+    context: string,
+    path: string,
+    value: any,
+    device: any,
+    cb: any
+  ) {
+    const switchProps = getSwitchProps(device)
+    const preset = switchProps.presets.find(
+      (preset: any) => preset.name == value
+    )
+    if (value === 'Unknown' || !preset) {
+      return {
+        state: 'COMPLETED',
+        statusCode: 400,
+        message: `invalid value ${value}`
+      }
+    } else {
+      const params: any = {
+        colorR: preset.colorR,
+        colorG: preset.colorG,
+        colorB: preset.colorB,
+        switch: 'on'
+      }
+      if (preset.bright !== 0) {
+        params.bright = preset.bright
+      }
+      cloudConnection
+        .setWSDeviceParams(device.deviceid, params)
+        .then((status: any) => {
+          debug('set status: %j', status)
+          cb({
+            state: 'COMPLETED',
+            statusCode: status.status === 'ok' ? 200 : 400
+          })
         })
         .catch((err: any) => {
           error(err)
           app.setPluginError(err.message)
-          app.setPluginStatus('retrying...')
-          setTimeout(() => {
-            openConnection()
-          }, 5000)
+          cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
         })
+      return { state: 'PENDING' }
     }
   }
 
+  function filterEnabledDevices (devices: any) {
+    return devices.filter((device: any) => {
+      const deviceProps = getDeviceProps(device)
+      return (
+        !deviceProps ||
+        typeof deviceProps.enabled === 'undefined' ||
+        deviceProps.enabled
+      )
+    })
+  }
   function getDevices (devices: any, doSendDeltas: boolean) {
-    devices.forEach((device: any) => {
+    filterEnabledDevices(devices).forEach((device: any) => {
       if (device.params && (device.params.switches || device.params.switch)) {
         if (device.params.switches) {
           device.params.switches.forEach((channel: any) => {
-            const switchPath = getBankSwitchPath(device, channel.outlet)
+            const switchProps = getSwitchProps(device, channel.outlet)
+            if (switchProps?.enabled) {
+              const switchPath = getBankSwitchPath(device, channel.outlet)
+              if (!putsRegistred[switchPath]) {
+                app.registerPutHandler(
+                  'vessels.self',
+                  switchPath,
+                  (context: string, path: string, value: any, cb: any) => {
+                    return bankHandler(
+                      context,
+                      path,
+                      value,
+                      device,
+                      channel.outlet,
+                      cb
+                    )
+                  }
+                )
+                putsRegistred[switchPath] = true
+              }
+            }
+          })
+        } else {
+          const switchProps = getSwitchProps(device)
+          if (switchProps?.enabled) {
+            const switchPath = getSwitchPath(device)
             if (!putsRegistred[switchPath]) {
               app.registerPutHandler(
                 'vessels.self',
                 switchPath,
                 (context: string, path: string, value: any, cb: any) => {
-                  return bankHandler(
-                    context,
-                    path,
-                    value,
-                    device.deviceid,
-                    channel.outlet,
-                    cb
-                  )
+                  return switchHandler(context, path, value, device, cb)
                 }
               )
-              putsRegistred[switchPath] = true
-            }
-          })
-        } else {
-          const switchPath = getSwitchPath(device)
-          if (!putsRegistred[switchPath]) {
-            app.registerPutHandler(
-              'vessels.self',
-              switchPath,
-              (context: string, path: string, value: any, cb: any) => {
-                return switchHandler(context, path, value, device.deviceid, cb)
+
+              if (device.uiid === l1Light) {
+                registerPutProp(device, 'mode', (value: any) => {
+                  return { mode: Object.values(l1ModeMap).indexOf(value) + 1 }
+                })
+                registerPutProp(device, 'colorR')
+                registerPutProp(device, 'colorG')
+                registerPutProp(device, 'colorB')
+                registerPutProp(device, 'dimmingLevel', (value: number) => {
+                  return { bright: Number((value * 100).toFixed(0)) }
+                })
+                registerPutProp(device, 'speed')
+                registerPutProp(device, 'sensitive')
+                registerPutProp(device, 'light_type')
+
+                const switchProps = getSwitchProps(device)
+
+                if (switchProps.presets) {
+                  app.registerPutHandler(
+                    'vessels.self',
+                    getSwitchPath(device, 'preset'),
+                    (context: string, path: string, value: any, cb: any) => {
+                      return presetHandler(context, path, value, device, cb)
+                    }
+                  )
+                }
+
+                putsRegistred[switchPath] = true
               }
-            )
-            putsRegistred[switchPath] = true
+            }
           }
         }
         if (doSendDeltas) {
@@ -394,12 +608,16 @@ export default function (app: any) {
     })
   }
 
-  function setBankPowerState (deviceid: any, state: boolean, outlet: any) {
+  function setBankPowerState (device: any, state: boolean, outlet: any) {
     const stateStr = state ? 'on' : 'off'
-    if (props.lanMode) {
-      return connection.setDevicePowerState(deviceid, stateStr, outlet + 1)
+    if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
+      return lanConnection.setDevicePowerState(
+        device.deviceid,
+        stateStr,
+        outlet + 1
+      )
     } else {
-      return connection.setWSDevicePowerState(deviceid, stateStr, {
+      return cloudConnection.setWSDevicePowerState(device.deviceid, stateStr, {
         channel: outlet + 1
       })
     }
@@ -409,12 +627,12 @@ export default function (app: any) {
     context: string,
     path: string,
     value: any,
-    deviceid: any,
+    device: any,
     outlet: any,
     cb: any
   ) {
     const state = value === 1 || value === 'on' || value === 'true'
-    setBankPowerState(deviceid, state, outlet)
+    setBankPowerState(device, state, outlet)
       .then((status: any) => {
         debug('set status outlet %d %j: ', outlet, status)
         cb({
@@ -430,12 +648,12 @@ export default function (app: any) {
     return { state: 'PENDING' }
   }
 
-  function setPowerState (deviceid: any, state: boolean) {
+  function setPowerState (device: any, state: boolean) {
     const stateStr = state ? 'on' : 'off'
-    if (props.lanMode) {
-      return connection.setDevicePowerState(deviceid, stateStr)
+    if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
+      return lanConnection.setDevicePowerState(device.deviceid, stateStr)
     } else {
-      return connection.setWSDevicePowerState(deviceid, stateStr)
+      return cloudConnection.setWSDevicePowerState(device.deviceid, stateStr)
     }
   }
 
@@ -443,11 +661,11 @@ export default function (app: any) {
     context: string,
     path: string,
     value: any,
-    deviceid: any,
+    device: any,
     cb: any
   ) {
     const state = value === 1 || value === 'on' || value === 'true'
-    setPowerState(deviceid, state)
+    setPowerState(device, state)
       .then((status: any) => {
         debug('set status: %j', status)
         cb({
@@ -500,9 +718,50 @@ export default function (app: any) {
         typeof switchProps.enabled === 'undefined' ||
         switchProps.enabled
       ) {
+        let extras = {}
+
+        if (device.uiid === l1Light) {
+          extras = {
+            type: 'dimmer',
+            canDimWhenOff: true
+          }
+          meta.push({
+            path: getSwitchPath(device, 'mode'),
+            value: {
+              enum: Object.values(l1ModeMap)
+            }
+          })
+          if (switchProps.presets) {
+            meta.push({
+              path: getSwitchPath(device, 'preset'),
+              value: {
+                displayName: switchProps?.displayName || device.name,
+                possibleValues: [
+                  ...switchProps.presets.map((preset: any) => {
+                    return {
+                      title: preset.name,
+                      value: preset.name
+                    }
+                  }),
+                  {
+                    title: 'Unknown',
+                    value: 'Unknown',
+                    enabled: false
+                  }
+                ],
+                enum: [
+                  ...switchProps.presets.map((preset: any) => preset.name),
+                  'Unknown'
+                ]
+              }
+            })
+          }
+        }
+
         meta.push({
           path: getSwitchPath(device),
           value: {
+            ...extras,
             displayName: switchProps?.displayName || device.name,
             abbrev: switchProps?.abbrev,
             units: 'bool'
@@ -510,8 +769,11 @@ export default function (app: any) {
         })
         meta.push({
           path: getSwitchPath(device, null),
-          abbrev: switchProps?.abbrev,
-          value: { displayName: switchProps?.displayName || device.name }
+          value: {
+            ...extras,
+            displayName: switchProps?.displayName || device.name,
+            abbrev: switchProps?.abbrev
+          }
         })
       }
     }
@@ -535,6 +797,8 @@ export default function (app: any) {
       sendMeta(device)
       sentMetaDevices[device.deviceid] = true
     }
+
+    device.params = { ...device.params, ...params }
 
     if (params.switches) {
       values = params.switches
@@ -561,19 +825,58 @@ export default function (app: any) {
         })
         .filter((kp: any) => kp != null)
       values = [].concat.apply([], values)
-    } else if (params.switch) {
+    } else {
       const switchProps = getSwitchProps(device)
       if (
         !switchProps ||
         typeof switchProps.enabled === 'undefined' ||
         switchProps.enabled
       ) {
-        values = [
-          {
+        values = []
+        if (params.switch) {
+          values.push({
             path: getSwitchPath(device),
             value: params.switch === 'on' ? 1 : 0
+          })
+        }
+
+        let addValue: any = (key: string, v: any) => {
+          const val = typeof v !== 'undefined' ? v : params[key]
+          if (typeof val !== 'undefined') {
+            values.push({
+              path: getSwitchPath(device, key),
+              value: v || params[key]
+            })
           }
-        ]
+        }
+
+        if (device.uiid === l1Light) {
+          addValue('mode', l1ModeMap[params.mode])
+          addValue('colorR')
+          addValue('colorG')
+          addValue('colorB')
+          if (typeof params.bright !== 'undefined') {
+            addValue('dimmingLevel', params.bright / 100.0)
+          }
+          addValue('speed')
+          addValue('sensitive')
+          addValue('light_type')
+
+          if (switchProps.presets) {
+            const preset = switchProps.presets.find((preset: any) => {
+              return (
+                device.params.colorR == preset.colorR &&
+                device.params.colorG == preset.colorG &&
+                device.params.colorB == preset.colorB &&
+                (preset.bright === '' || device.params.bright == preset.bright)
+              )
+            })
+            values.push({
+              path: getSwitchPath(device, 'preset'),
+              value: preset?.name || 'Unknown'
+            })
+          }
+        }
       }
     }
 
@@ -613,7 +916,7 @@ export default function (app: any) {
 
   function dnsdChanged (service: any) {
     const txt = service.txt || service.txtRecord
-    if ( !txt || !txt.id || !txt.iv  ) {
+    if (!txt || !txt.id || !txt.iv) {
       error('invalid mdns record')
       error(JSON.stringify(service, null, 2))
     }
@@ -649,6 +952,10 @@ export default function (app: any) {
     }
 
     return JSON.parse(decryptionData(encoded, deviceKey, iv))
+  }
+
+  function getDeviceProps (device: any) {
+    return props[`Device ID ${device.deviceid}`] || {}
   }
 
   function getSwitchProps (device: any, channel: any = undefined) {
@@ -695,4 +1002,23 @@ interface Plugin {
   description: string
   schema: any
   uiSchema: any
+}
+
+const l1Light = 59
+
+const cloudOnlyHardware = [l1Light]
+
+const l1ModeMap: any = {
+  1: 'Colorful',
+  2: 'Colorful Gradient',
+  3: 'Colorful Breath',
+  4: 'DIY Gradient',
+  5: 'DIY Pulse',
+  6: 'DIY Breath',
+  7: 'DIY Strobe',
+  8: 'RGB Gradient',
+  9: 'RGB Pulse',
+  10: 'RGB Breath',
+  11: 'RBG Strobe',
+  12: 'Sync to music'
 }
