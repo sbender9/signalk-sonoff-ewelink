@@ -429,9 +429,11 @@ export default function (app: any) {
 
       socket = await cloudConnection
         .openWebSocket((data: any) => {
-          app.debug(data)
           if (typeof data === 'string') {
+            debug('ws recv: ' +data)
             return
+          } else {
+            debug('ws recv: %j', data)
           }
 
           if (data.action) {
