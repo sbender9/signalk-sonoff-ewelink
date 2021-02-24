@@ -728,7 +728,13 @@ export default function (app: any) {
           meta.push({
             path: getSwitchPath(device, 'mode'),
             value: {
-              enum: Object.values(l1ModeMap)
+              enum: Object.values(l1ModeMap),
+              possibleValues: Object.values(l1ModeMap).map((mode: any) => {
+                return {
+                  title: mode,
+                  value: mode
+                }
+              })
             }
           })
           if (switchProps.presets) {
@@ -845,7 +851,7 @@ export default function (app: any) {
           if (typeof val !== 'undefined') {
             values.push({
               path: getSwitchPath(device, key),
-              value: v || params[key]
+              value: val
             })
           }
         }
@@ -970,7 +976,7 @@ export default function (app: any) {
   function getSwitchPath (device: any, key: any = 'state') {
     const config = props[`Device ID ${device.deviceid}`] || {}
     return `electrical.switches.${config.switchPath || camelCase(device.name)}${
-      key ? '.' + key : ''
+      key ? '.' + key : '' 
     }`
   }
 
