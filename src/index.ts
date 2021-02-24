@@ -448,7 +448,7 @@ export default function (app: any) {
         })
       
       socket.onClose.addListener((err: any) => {
-        error('web socket closed: ' + err)
+        error('web socket closed: ' + err.reason)
         wsTimer = setTimeout(() => {
           wsTimer = undefined
           clearInterval(wsPingInterval)
@@ -456,6 +456,10 @@ export default function (app: any) {
           openWebSocket()
         }, 5000)
       })
+
+      if ( wsPingInterval ) {
+        clearInterval(wsPingInterval)
+      }
       
       wsPingInterval = setInterval(async () => {
         try {
@@ -464,7 +468,7 @@ export default function (app: any) {
         } catch ( err ) {
           error(err)
         }
-        }, pingTime)
+      }, pingTime)
     } catch (err) {
       error(err)
       app.setPluginError(err.message)
