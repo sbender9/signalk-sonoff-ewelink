@@ -19,6 +19,7 @@ const Zeroconf = require('ewelink-api-sbender9/src/classes/Zeroconf')
 const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
 const path = require('path')
 const dnssd = require('dnssd2')
+const fs = require('fs')
 
 let mdns: any
 
@@ -47,6 +48,7 @@ export default function (app: any) {
   let putsRegistred: any = {}
   let devicesCache: any
   let arpTable: any = []
+  let arpTablePath: string
   let props: any
   let browser: any
   let wsTimer: any
@@ -308,6 +310,10 @@ export default function (app: any) {
         app.getDataDirPath(),
         'devices-cache.json'
       )
+      arpTablePath = path.join(
+        app.getDataDirPath(),
+        'arp-table.json'
+      )
 
       debug('saving device cache...')
       try {
@@ -324,6 +330,8 @@ export default function (app: any) {
           return
         }
       }
+
+      readArpTabel()
 
       lanConnection = new ewelink({
         devicesCache,
@@ -959,10 +967,28 @@ export default function (app: any) {
         } else {
           arpTable.push({ ip: service.addresses[0], mac })
         }
+        saveArpTable()
       }
     }
   }
 
+  function readArpTabel() {
+    try {
+      const content = fs.readFileSync(arpTablePath)
+      arpTable = JSON.parse(content)
+    } catch( err ) {
+      error(err)
+    }
+  }
+
+  function saveArpTable() {
+    try {
+      fs.writeFileSync(arpTablePath, JSON.stringify(arpTable, null, 2))
+    } catch ( err ) {
+      error(err)
+    }
+  }
+  
   function dnsdChanged (service: any) {
     const txt = service.txt || service.txtRecord
     if (!txt || !txt.id || !txt.iv) {
