@@ -31,6 +31,8 @@ const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
 
 const APP_ID_WS = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
 const APP_SECRET_WS = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
+const pingTime = 120000
+//const pingTime = 10000
 
 export default function (app: any) {
   const error = app.error
@@ -47,6 +49,8 @@ export default function (app: any) {
   let arpTable: any = []
   let props: any
   let browser: any
+  let wsTimer: any
+  let wsPingInterval: any
 
   const plugin: Plugin = {
     start: function (properties: any) {
@@ -72,6 +76,14 @@ export default function (app: any) {
       if (browser) {
         browser.stop()
         browser = undefined
+      }
+      if ( wsTimer ) {
+        clearTimeout(wsTimer)
+        wsTimer = undefined
+      }
+      if ( wsPingInterval ) {
+        clearInterval(wsPingInterval)
+        wsPingInterval = undefined
       }
       putsRegistred = {}
       sentMetaDevices = {}
@@ -390,51 +402,78 @@ export default function (app: any) {
           APP_SECRET_WS
         })
 
-        await cloudConnection.getCredentials()
-
-        app.setPluginStatus('Connected to Cloud')
-
-        cloudConnection
-          .openWebSocket((data: any) => {
-            app.debug(data)
-            if (typeof data === 'string') {
-              return
-            }
-
-            if (data.action) {
-              if (data.action === 'update') {
-                if (data.params) {
-                  const device = getCachedDevice(data.deviceid)
-                  if (device) {
-                    const deviceProps = getDeviceProps(device)
-                    if (
-                      !deviceProps ||
-                      typeof deviceProps === 'undefined' ||
-                      deviceProps.enabled
-                    ) {
-                      sendDeltas(device, data.params)
-                    }
-                  } else {
-                    error(`unknown device: ${data.deviceid}`)
-                  }
-                }
-              }
-            }
-          })
-          .then((sock: any) => {
-            socket = sock
-
-            socket.onclose = (err: any) => {
-              error('web socket closed: ' + err)
-            }
-          })
-          .catch((err: any) => {
-            error(err)
-            app.setPluginError(err.message)
-          })
+        try {
+          openWebSocket()
+        } catch ( err ) {
+          error(err)
+        }
       }
     }
   }
+
+  async function openWebSocket() {
+    debug('opening cloud web socket...')
+
+    try {
+      await cloudConnection.getCredentials()
+
+      app.setPluginStatus('Connected to Cloud')
+
+      socket = await cloudConnection
+        .openWebSocket((data: any) => {
+          app.debug(data)
+          if (typeof data === 'string') {
+            return
+          }
+
+          if (data.action) {
+            if (data.action === 'update') {
+              if (data.params) {
+                const device = getCachedDevice(data.deviceid)
+                if (device) {
+                  const deviceProps = getDeviceProps(device)
+                  if (
+                    !deviceProps ||
+                      typeof deviceProps === 'undefined' ||
+                      deviceProps.enabled
+                  ) {
+                    sendDeltas(device, data.params)
+                  }
+                } else {
+                  error(`unknown device: ${data.deviceid}`)
+                }
+              }
+            }
+          }
+        })
+      
+      socket.onClose.addListener((err: any) => {
+        error('web socket closed: ' + err)
+        wsTimer = setTimeout(() => {
+          wsTimer = undefined
+          clearInterval(wsPingInterval)
+          wsPingInterval = undefined
+          openWebSocket()
+        }, 5000)
+      })
+      
+      wsPingInterval = setInterval(async () => {
+        try {
+          debug('sending ping...')
+          await socket.send('ping')
+        } catch ( err ) {
+          error(err)
+        }
+        }, pingTime)
+    } catch (err) {
+      error(err)
+      app.setPluginError(err.message)
+      wsTimer = setTimeout(() => {
+        wsTimer = undefined
+        openWebSocket()
+      }, 5000)
+    }
+  }  
 
   function propHandler (
     context: string,
