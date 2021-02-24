@@ -394,14 +394,6 @@ export default function (app: any) {
       }
 
       if (!props.lanMode || anyCloudOnlyDevices) {
-        cloudConnection = new ewelink({
-          email: props.userName,
-          password: props.password,
-          region: props.region,
-          APP_ID_WS,
-          APP_SECRET_WS
-        })
-
         try {
           openWebSocket()
         } catch ( err ) {
@@ -412,6 +404,14 @@ export default function (app: any) {
   }
 
   async function openWebSocket() {
+    cloudConnection = new ewelink({
+      email: props.userName,
+      password: props.password,
+      region: props.region,
+      APP_ID_WS,
+      APP_SECRET_WS
+    })
+
     debug('opening cloud web socket...')
 
     try {
