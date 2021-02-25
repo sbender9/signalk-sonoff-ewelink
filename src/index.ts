@@ -30,8 +30,12 @@ try {
 const APP_ID = 'oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq'
 const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
 
-const APP_ID_WS = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
-const APP_SECRET_WS = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
+//const APP_ID_WS = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
+//const APP_SECRET_WS = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
+
+const APP_ID_WS = APP_ID
+const APP_SECRET_WS = APP_SECRET
+
 const pingTime = 120000
 //const pingTime = 10000
 
@@ -436,23 +440,19 @@ export default function (app: any) {
             debug('ws recv: %j', data)
           }
 
-          if (data.action) {
-            if (data.action === 'update') {
-              if (data.params) {
-                const device = getCachedDevice(data.deviceid)
-                if (device) {
-                  const deviceProps = getDeviceProps(device)
-                  if (
-                    !deviceProps ||
-                      typeof deviceProps === 'undefined' ||
-                      deviceProps.enabled
-                  ) {
-                    sendDeltas(device, data.params)
-                  }
-                } else {
-                  error(`unknown device: ${data.deviceid}`)
-                }
+          if (data.params && data.deviceid) {
+            const device = getCachedDevice(data.deviceid)
+            if (device) {
+              const deviceProps = getDeviceProps(device)
+              if (
+                !deviceProps ||
+                  typeof deviceProps === 'undefined' ||
+                  deviceProps.enabled
+              ) {
+                sendDeltas(device, data.params)
               }
+            } else {
+              error(`unknown device: ${data.deviceid}`)
             }
           }
         })
@@ -502,6 +502,7 @@ export default function (app: any) {
     cloudConnection
       .setWSDeviceParams(device.deviceid, params)
       .then((status: any) => {
+        cloudConnection.getWSDeviceStatus(device.deviceid)
         debug('set status: %j', status)
         cb({
           state: 'COMPLETED',
@@ -558,6 +559,8 @@ export default function (app: any) {
       cloudConnection
         .setWSDeviceParams(device.deviceid, params)
         .then((status: any) => {
+          cloudConnection.getWSDeviceStatus(device.deviceid)
+          
           debug('set status: %j', status)
           cb({
             state: 'COMPLETED',
@@ -661,7 +664,7 @@ export default function (app: any) {
     })
   }
 
-  function setBankPowerState (device: any, state: boolean, outlet: any) {
+  async function setBankPowerState (device: any, state: boolean, outlet: any) {
     const stateStr = state ? 'on' : 'off'
     if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
       return lanConnection.setDevicePowerState(
@@ -670,9 +673,11 @@ export default function (app: any) {
         outlet + 1
       )
     } else {
-      return cloudConnection.setWSDevicePowerState(device.deviceid, stateStr, {
+      let res =  await cloudConnection.setWSDevicePowerState(device.deviceid, stateStr, {
         channel: outlet + 1
       })
+      cloudConnection.getWSDeviceStatus(device.deviceid)
+      return res
     }
   }
 
@@ -690,7 +695,8 @@ export default function (app: any) {
         debug('set status outlet %d %j: ', outlet, status)
         cb({
           state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400
+          statusCode: status.status === 'ok' ? 200 : 400,
+          message: status.message
         })
       })
       .catch((err: any) => {
@@ -701,12 +707,14 @@ export default function (app: any) {
     return { state: 'PENDING' }
   }
 
-  function setPowerState (device: any, state: boolean) {
+  async function setPowerState (device: any, state: boolean) {
     const stateStr = state ? 'on' : 'off'
     if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
       return lanConnection.setDevicePowerState(device.deviceid, stateStr)
     } else {
-      return cloudConnection.setWSDevicePowerState(device.deviceid, stateStr)
+      let res = await cloudConnection.setWSDevicePowerState(device.deviceid, stateStr)
+      cloudConnection.getWSDeviceStatus(device.deviceid)
+      return res
     }
   }
 
@@ -723,7 +731,8 @@ export default function (app: any) {
         debug('set status: %j', status)
         cb({
           state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400
+          statusCode: status.status === 'ok' ? 200 : 400,
+          message: status.message
         })
       })
       .catch((err: any) => {
@@ -927,7 +936,7 @@ export default function (app: any) {
                 device.params.colorR == preset.colorR &&
                 device.params.colorG == preset.colorG &&
                 device.params.colorB == preset.colorB &&
-                (preset.bright === '' || device.params.bright == preset.bright)
+                (preset.bright === 0 || device.params.bright == preset.bright)
               )
             })
             values.push({
