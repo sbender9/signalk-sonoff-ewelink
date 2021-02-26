@@ -503,10 +503,11 @@ export default function (app: any) {
       .setWSDeviceParams(device.deviceid, params)
       .then((status: any) => {
         cloudConnection.getWSDeviceStatus(device.deviceid)
-        debug('set status: %j', status)
+        debug('got status: %j', status)
         cb({
           state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400
+          statusCode: status.status === 'ok' ? 200 : 400,
+          message: status.message
         })
       })
       .catch((err: any) => {
@@ -561,10 +562,11 @@ export default function (app: any) {
         .then((status: any) => {
           cloudConnection.getWSDeviceStatus(device.deviceid)
           
-          debug('set status: %j', status)
+          debug('got status: %j', status)
           cb({
             state: 'COMPLETED',
-            statusCode: status.status === 'ok' ? 200 : 400
+            statusCode: status.status === 'ok' ? 200 : 400,
+            message: status.message
           })
         })
         .catch((err: any) => {
@@ -692,7 +694,7 @@ export default function (app: any) {
     const state = value === 1 || value === 'on' || value === 'true'
     setBankPowerState(device, state, outlet)
       .then((status: any) => {
-        debug('set status outlet %d %j: ', outlet, status)
+        debug('got status outlet %d %j: ', outlet, status)
         cb({
           state: 'COMPLETED',
           statusCode: status.status === 'ok' ? 200 : 400,
