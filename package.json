@@ -11,7 +11,10 @@
     "release": "git tag -d v$npm_package_version ; git tag v$npm_package_version && git push --tags && git push && npm run create-release"
   },
   "keywords": [
-    "signalk-node-server-plugin"
+    "signalk-node-server-plugin",
+    "signalk-category-digital-switching",
+    "signalk-category-hardware",
+    "sonoff"
   ],
   "author": "scott@scottbender.net",
   "license": "Apache-2.0",
