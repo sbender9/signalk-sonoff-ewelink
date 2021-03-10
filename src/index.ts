@@ -245,6 +245,14 @@ export default function (app: any) {
             if (device.uiid == l1Light) {
               schema.properties[
                 `Device ID ${device.deviceid}`
+              ].properties.includeDYIModes = {
+                title: 'Include DYI Modes in Presets',
+                type: 'boolean',
+                default: false
+              }
+
+              schema.properties[
+                `Device ID ${device.deviceid}`
               ].properties.presets = {
                 title: 'Presets',
                 type: 'array',
@@ -329,8 +337,8 @@ export default function (app: any) {
       if (!devicesCache) {
         devicesCache = await Zeroconf.loadCachedDevices(deviceCachePath)
         if (devicesCache.error) {
-          error(devicesCache.error)
-          app.setPluginError(devicesCache.error)
+          //error(devicesCache.error)
+          devicesCache = undefined
           return
         }
       }
@@ -372,7 +380,12 @@ export default function (app: any) {
     })
 
     try {
-      await cloudConnection.getCredentials()
+      let res = await cloudConnection.getCredentials()
+
+      if ( res.error ) {
+        app.setPluginError(res.msg)
+        return
+      }
 
       let devices: any = await cloudConnection.getDevices()
       debug('found devices: %j', devices)
@@ -380,6 +393,7 @@ export default function (app: any) {
       getDevices(devices, true)
     } catch (err) {
       error(err)
+      app.setPluginError(err.message)
     }
 
     if (props.lanMode) {
@@ -636,7 +650,11 @@ export default function (app: any) {
                 registerPutProp(device, 'colorG')
                 registerPutProp(device, 'colorB')
                 registerPutProp(device, 'dimmingLevel', (value: number) => {
-                  return { bright: Number((value * 100).toFixed(0)) }
+                  let val = Number((value * 100).toFixed(0))
+                  if ( val === 0 ) {
+                    val = 1
+                  }
+                  return { bright:  val }
                 })
                 registerPutProp(device, 'speed')
                 registerPutProp(device, 'sensitive')
@@ -691,7 +709,7 @@ export default function (app: any) {
     outlet: any,
     cb: any
   ) {
-    const state = value === 1 || value === 'on' || value === 'true'
+    const state = value === 1 || value === 'on' || value === 'true' || value === true
     setBankPowerState(device, state, outlet)
       .then((status: any) => {
         debug('got status outlet %d %j: ', outlet, status)
@@ -812,16 +830,10 @@ export default function (app: any) {
                       title: preset.name,
                       value: preset.name
                     }
-                  }),
-                  {
-                    title: 'Unknown',
-                    value: 'Unknown',
-                    enabled: false
-                  }
+                  })
                 ],
                 enum: [
-                  ...switchProps.presets.map((preset: any) => preset.name),
-                  'Unknown'
+                  ...switchProps.presets.map((preset: any) => preset.name)
                 ]
               }
             })
