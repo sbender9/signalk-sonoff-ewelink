@@ -118,7 +118,7 @@ export default function (app: any) {
           region: {
             type: 'string',
             title: 'Region',
-            description: 'eWeLink Region',
+            description: 'eWeLink Region (us, eu or cn)',
             default: 'us'
           },
           lanMode: {
