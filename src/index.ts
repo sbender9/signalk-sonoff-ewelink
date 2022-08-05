@@ -367,7 +367,7 @@ export default function (app: any) {
         .on('serviceUp', dnsdChanged)
         .on('serviceChanged', dnsdChanged)
         .start()
-    } catch (err) {
+    } catch (err:any) {
       error(err)
       app.setPluginError(err.message)
     }
@@ -394,7 +394,7 @@ export default function (app: any) {
       debug('found devices: %j', devices)
       devicesCache = devices
       getDevices(devices, true)
-    } catch (err) {
+    } catch (err:any) {
       error(err)
       app.setPluginError(err.message)
     }
@@ -496,7 +496,7 @@ export default function (app: any) {
           error(err)
         }
       }, pingTime)
-    } catch (err) {
+    } catch (err:any) {
       error(err)
       app.setPluginError(err.message)
       wsTimer = setTimeout(() => {
