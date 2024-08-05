@@ -27,8 +27,11 @@ try {
   mdns = require('mdns')
 } catch (err) {}
 
-const APP_ID = '4s1FXKC9FaGfoqXhmXSJneb3qcm1gOak'
-const APP_SECRET = 'oKvCM06gvwkRbfetd6qWRrbC3rFrbIpV'
+const APP_ID = '6dgd7bXbf6pfrqEftpq3JkYeRn9yBQ6y'
+const APP_SECRET = 'ouCUhN7oBkkohUrmFy6VlT6c8iP5CYd4'
+
+//const APP_ID = '4s1FXKC9FaGfoqXhmXSJneb3qcm1gOak'
+//const APP_SECRET = 'oKvCM06gvwkRbfetd6qWRrbC3rFrbIpV'
 
 //const APP_ID = 'KOBxGJna5qkk3JLXw3LHLX3wSNiPjAVi'
 //const APP_SECRET = '4v0sv6X5IM2ASIBiNDj6kGmSfxo40w7n'
@@ -42,7 +45,8 @@ const APP_SECRET = 'oKvCM06gvwkRbfetd6qWRrbC3rFrbIpV'
 const APP_ID_WS = APP_ID
 const APP_SECRET_WS = APP_SECRET
 
-const pingTime = 120000
+const pingTime = 25000
+//const pingTime = 120000
 //const pingTime = 10000
 
 export default function (app: any) {
@@ -478,7 +482,7 @@ export default function (app: any) {
         })
       
       socket.onClose.addListener((err: any) => {
-        error('web socket closed: ' + err.reason)
+        error('web socket closed: ' + err)
         wsTimer = setTimeout(() => {
           wsTimer = undefined
           clearInterval(wsPingInterval)
@@ -785,7 +789,7 @@ export default function (app: any) {
             value: {
               displayName: switchProps?.displayName || device.name,
               abbrev: switchProps?.abbrev,
-              units: 'bool',
+              //units: 'bool',
               order: channel.outlet
             }
           })
@@ -852,7 +856,7 @@ export default function (app: any) {
             ...extras,
             displayName: switchProps?.displayName || device.name,
             abbrev: switchProps?.abbrev,
-            units: 'bool'
+            //units: 'bool'
           }
         })
         meta.push({
