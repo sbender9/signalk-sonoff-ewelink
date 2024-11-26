@@ -27,6 +27,8 @@ try {
   mdns = require('mdns')
 } catch (err) {}
 
+
+//the registered one
 const APP_ID = '6dgd7bXbf6pfrqEftpq3JkYeRn9yBQ6y'
 const APP_SECRET = 'ouCUhN7oBkkohUrmFy6VlT6c8iP5CYd4'
 
@@ -393,14 +395,14 @@ export default function (app: any) {
       let res = await cloudConnection.getCredentials()
 
       if ( res.error ) {
+        error('error logging in: ' + JSON.stringify(res))
         app.setPluginError(res.msg)
-        return
+      } else {
+        let devices: any = await cloudConnection.getDevices()
+        debug('found devices: %j', devices)
+        devicesCache = devices
+        getDevices(devices, true)
       }
-
-      let devices: any = await cloudConnection.getDevices()
-      debug('found devices: %j', devices)
-      devicesCache = devices
-      getDevices(devices, true)
     } catch (err:any) {
       error(err)
       app.setPluginError(err.message)
