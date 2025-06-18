@@ -1,6 +1,6 @@
 {
   "name": "signalk-sonoff-ewelink",
-  "version": "1.5.10",
+  "version": "2.0.0-beta1",
   "description": "Signal K Plugin For Sonoff/eWeLink devices",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,7 @@
   "dependencies": {
     "camelcase": "^6.2.0",
     "dnssd2": "^1.0.0",
-    "ewelink-api-sbender9": "^1.0.0"
+    "ewelink-api-next": "^1.0.4"
   },
   "repository": {
     "type": "git",

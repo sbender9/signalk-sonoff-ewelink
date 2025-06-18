@@ -14,12 +14,15 @@
  */
 
 const camelCase = require('camelcase')
-const ewelink = require('ewelink-api-sbender9')
-const Zeroconf = require('ewelink-api-sbender9/src/classes/Zeroconf')
-const { decryptionData } = require('ewelink-api-sbender9/src/helpers/ewelink')
+const eWeLink = require('ewelink-api-next').default
 const path = require('path')
 const dnssd = require('dnssd2')
 const fs = require('fs')
+const crypto = require('crypto');
+
+const nonce = (size: Number = 8): string => Math.random().toString(36).slice(-size);
+
+const fetch = require('node-fetch')
 
 let mdns: any
 
@@ -29,23 +32,11 @@ try {
 
 
 //the registered one
-const APP_ID = '6dgd7bXbf6pfrqEftpq3JkYeRn9yBQ6y'
-const APP_SECRET = 'ouCUhN7oBkkohUrmFy6VlT6c8iP5CYd4'
+const APP_ID = 'SsgewdgY5EHXEFIx6wAsmqf7dBE71c8i'
+const APP_SECRET = 'oqqaAV5qMu2AWRqkl6Df2GltfkDxuKse'
 
-//const APP_ID = '4s1FXKC9FaGfoqXhmXSJneb3qcm1gOak'
-//const APP_SECRET = 'oKvCM06gvwkRbfetd6qWRrbC3rFrbIpV'
-
-//const APP_ID = 'KOBxGJna5qkk3JLXw3LHLX3wSNiPjAVi'
-//const APP_SECRET = '4v0sv6X5IM2ASIBiNDj6kGmSfxo40w7n'
-
-//const APP_ID = 'oeVkj2lYFGnJu5XUtWisfW4utiN4u9Mq'
-//const APP_SECRET = '6Nz4n0xA8s8qdxQf2GqurZj2Fs55FUvM'
-
-//const APP_ID_WS = 'YzfeftUVcZ6twZw1OoVKPRFYTrGEg01Q'
-//const APP_SECRET_WS = '4G91qSoboqYO4Y0XJ0LPPKIsq8reHdfa'
-
-const APP_ID_WS = APP_ID
-const APP_SECRET_WS = APP_SECRET
+//const APP_ID = 'unD0YlKmlbBtUGkaOQt0OywX7sGmzHat'
+//const APP_SECRET = 'NGMMshHMBCkWfy0Hwkiskw7iP07UHLGm'
 
 const pingTime = 25000
 //const pingTime = 120000
@@ -55,20 +46,24 @@ export default function (app: any) {
   const error = app.error
   const debug = app.debug
   let sentMetaDevices: any = {}
+  let lanInfo: any
+  let lanClient: any
+  let client: any
+  let wsClient: any
+  let ws: any
   let lanConnection: any
   let cloudConnection: any
   let anyCloudOnlyDevices: boolean
   let cloudOnlyByDevice: any = {}
-  let socket: any
-  let pollInterval: any
   let putsRegistred: any = {}
   let devicesCache: any
-  let arpTable: any = []
-  let arpTablePath: string
+  let families: any
+  let lanInfoPath: string
+  let deviceCachePath: string
   let props: any
-  let browser: any
   let wsTimer: any
   let wsPingInterval: any
+  let pending: any = {}
 
   const plugin: Plugin = {
     start: function (properties: any) {
@@ -87,21 +82,15 @@ export default function (app: any) {
     },
 
     stop: function () {
-      if (socket) {
-        socket.close()
-        socket = undefined
-      }
-      if (browser) {
-        browser.stop()
-        browser = undefined
+      wsClient = undefined
+      client = undefined
+      if (ws) {
+        ws.close()
+        ws = undefined
       }
       if ( wsTimer ) {
         clearTimeout(wsTimer)
         wsTimer = undefined
-      }
-      if ( wsPingInterval ) {
-        clearInterval(wsPingInterval)
-        wsPingInterval = undefined
       }
       putsRegistred = {}
       sentMetaDevices = {}
@@ -117,38 +106,33 @@ export default function (app: any) {
       const schema: any = {
         type: 'object',
         properties: {
-          userName: {
+          authInfo: {
             type: 'string',
-            title: 'User Name',
-            description: 'eWeLink User Name'
-          },
-          password: {
-            type: 'string',
-            title: 'Password',
-            description: 'eWeLink Password'
-          },
-          region: {
-            type: 'string',
-            title: 'Region',
-            description: 'eWeLink Region (us, eu or cn)',
-            default: 'us'
+            lines: 10,
+            title: 'Authentication Info',
+            description: "See plugin README"
           },
           lanMode: {
             type: 'boolean',
             title: 'Use LAN Mode',
             default: true
-          },
-          useMdns: {
-            type: 'boolean',
-            title: 'Use MDNS Package If available',
-            default: false
           }
+        }
+      }
+
+      if ( families ) {
+        schema.properties['family'] = {
+          type: 'string',
+          title: 'Family',
+          enum: families.map((fam: any) => fam.id),
+          enumNames: families.map((fam: any) => fam.name),
+          default: families[0].id
         }
       }
 
       if (devicesCache) {
         devicesCache.forEach((device: any) => {
-          if (device.params.switches) {
+          if (device.params && device.params.switches) {
             const devSchema: any = {
               type: 'object',
               properties: {
@@ -254,7 +238,7 @@ export default function (app: any) {
                 }
               }
             }
-            if (device.uiid == l1Light) {
+            if (device.extra.uiid == l1Light) {
               schema.properties[
                 `Device ID ${device.deviceid}`
               ].properties.includeDYIModes = {
@@ -309,8 +293,8 @@ export default function (app: any) {
 
     uiSchema: () => {
       const uiSchema: any = {
-        password: {
-          'ui:widget': 'password'
+        authInfo: {
+          "ui:widget": "textarea"
         }
       }
       if (devicesCache) {
@@ -328,193 +312,202 @@ export default function (app: any) {
     }
   }
 
-  async function startLanMode () {
-    try {
-      const deviceCachePath = path.join(
-        app.getDataDirPath(),
-        'devices-cache.json'
-      )
-      arpTablePath = path.join(
-        app.getDataDirPath(),
-        'arp-table.json'
-      )
+  async function openConnection () {
 
-      debug('saving device cache...')
-      try {
-        await cloudConnection.saveDevicesCache(deviceCachePath)
-      } catch (err) {
-        error(err)
+/*    
+    let token = '552c07ac410dccf046bf23c18248a3b34ca6763a'
+    const resp = await fetch(`https://us-apia.coolkit.cc/v2/family`, {
+      headers: {
+        "X-CK-Appid": APP_ID,
+        Authorization: "Bearer " + token,
+        'Content-Type': 'application/json'
       }
-
-      if (!devicesCache) {
-        devicesCache = await Zeroconf.loadCachedDevices(deviceCachePath)
-        if (devicesCache.error) {
-          //error(devicesCache.error)
-          devicesCache = undefined
-          return
-        }
-      }
-
-      readArpTabel()
-
-      lanConnection = new ewelink({
-        devicesCache,
-        arpTable,
-        APP_ID,
-        APP_SECRET
       })
 
-      getDevices(devicesCache, false)
+    console.log(JSON.stringify(resp, null, 2))
+    const data = await resp.json();
+    console.log(JSON.stringify(data, null, 2))
+*/
+    
+    deviceCachePath = path.join(
+      app.getDataDirPath(),
+      'devices-cache-v2.json'
+    )
+    
+    lanInfoPath = path.join(
+      app.getDataDirPath(),
+      'lan-info.json'
+    )
 
-      debug('starting dnsd browser...')
-      if (mdns && props.useMdns) {
-        browser = mdns.createBrowser(mdns.tcp('ewelink'))
-      } else {
-        browser = dnssd.Browser(dnssd.tcp('ewelink'))
+    const tokenInfo = JSON.parse(props.authInfo)
+
+    const logging = {
+      info: (msg:any) => {
+        app.debug(msg)
+      },
+      error: (msg:any) => {
+        app.error(msg)
       }
-      browser
-        .on('serviceUp', dnsdChanged)
-        .on('serviceChanged', dnsdChanged)
-        .start()
-    } catch (err:any) {
-      error(err)
-      app.setPluginError(err.message)
-    }
-  }
-
-  async function openConnection () {
-    cloudConnection = new ewelink({
-      email: props.userName,
-      password: props.password,
-      region: props.region,
-      APP_ID,
-      APP_SECRET
-    })
-
-    try {
-      let res = await cloudConnection.getCredentials()
-
-      if ( res.error ) {
-        error('error logging in: ' + JSON.stringify(res))
-        app.setPluginError(res.msg)
-      } else {
-        let devices: any = await cloudConnection.getDevices()
-        debug('found devices: %j', devices)
-        devicesCache = devices
-        getDevices(devices, true)
-      }
-    } catch (err:any) {
-      error(err)
-      app.setPluginError(err.message)
     }
 
-    if (props.lanMode) {
-      await startLanMode()
+    const config = {
+      region: tokenInfo.region,
+      appId: APP_ID,
+      secert: APP_SECRET,
+      appSecert: APP_SECRET,
+      logObj: logging
+    }
+
+    readDeviceCache()
+
+    client = new eWeLink.WebAPI(config)
+
+    client.at = tokenInfo.accessToken
+    client.setUrl(tokenInfo.region)
+
+    let fam = await client.home.getFamily({})
+
+    if ( fam.error !== 0 ) {
+      error(fam.msg)
+      app.setPluginError(fam.msg)
+    } else if ( fam.data.familyList ) {
+      families = fam.data.familyList
+    }
+    
+    debug("families: %s", JSON.stringify(fam, null, 2))
+
+
+    let thingList = await client.device.getAllThingsAllPages({familyId: props.family})
+    debug('things: %s', JSON.stringify(thingList, null, 2))
+
+    if ( thingList?.error === 0 ) {
+      devicesCache = thingList.data.thingList.map((x:any) => x.itemData)
+      saveDeviceCache()
+    } else {
+      error(thingList.msg)
+      app.setPluginError(thingList.msg)
     }
 
     if (devicesCache) {
+      getDevices(devicesCache, true)
+
       devicesCache.forEach((device: any) => {
         const switchProps = getDeviceProps(device)
         let cloudOnly: boolean =
           (!switchProps ||
             typeof switchProps.enabled === 'undefined' ||
             switchProps.enabled) &&
-          (cloudOnlyHardware.indexOf(device.uiid) !== -1 ||
-            switchProps?.forceCloudMode === true)
+            (cloudOnlyHardware.indexOf(device.extra.uiid) !== -1 ||
+             switchProps?.forceCloudMode === true)
         cloudOnlyByDevice[device.deviceid] = cloudOnly
       })
       anyCloudOnlyDevices = devicesCache.find(
         (device: any) => cloudOnlyByDevice[device.deviceid] === true
       )
+    }
+    
+    wsClient = new eWeLink.Ws( {
+      ...config,
+      //logObj: console
+    });
 
-      if (props.lanMode && !anyCloudOnlyDevices) {
-        app.setPluginStatus('Using LAN mode only')
+    let userApiKey
+    if ( devicesCache.length > 0 ) {
+      userApiKey = devicesCache[0].apikey
+    }
+    wsClient.userApiKey = userApiKey
+    wsClient.at = tokenInfo.accessToken;
+    wsClient.region = tokenInfo.region;
+
+    openWebSocket()
+        
+    if ( props.lanMode ) {
+      readLanInfo()
+      if ( !lanInfo ) {
+        lanInfo = {}
       }
-
-      if (!props.lanMode || anyCloudOnlyDevices) {
-        try {
-          openWebSocket()
-        } catch ( err ) {
-          error(err)
+      lanClient = new eWeLink.Lan({
+        selfApikey: userApiKey,
+        logObj: eWeLink.createLogger("lan")
+      });
+      
+      lanClient.discovery((server:any) => {
+        debug("mdns server:", server);
+        lanInfo[server.txt.id] = {
+          ip: server.addresses[0],
+          iv: server.txt.iv,
+          port: server.port
         }
-      }
+        saveLanInfo()
+        //console.log(JSON.stringify(lanInfo, null, 2))
+      });
     }
   }
-
+  
   async function openWebSocket() {
-    cloudConnection = new ewelink({
-      email: props.userName,
-      password: props.password,
-      region: props.region,
-      APP_ID_WS,
-      APP_SECRET_WS
-    })
-
-    debug('opening cloud web socket...')
-
-    try {
-      await cloudConnection.getCredentials()
-
-      app.setPluginStatus('Connected to Cloud')
-
-      socket = await cloudConnection
-        .openWebSocket((data: any) => {
-          if (typeof data === 'string') {
-            debug('ws recv: ' +data)
-            return
-          } else {
-            debug('ws recv: %j', data)
-          }
-
-          if (data.params && data.deviceid) {
-            const device = getCachedDevice(data.deviceid)
-            if (device) {
-              const deviceProps = getDeviceProps(device)
-              if (
-                !deviceProps ||
-                  typeof deviceProps === 'undefined' ||
-                  deviceProps.enabled
-              ) {
-                sendDeltas(device, data.params)
-              }
-            } else {
-              error(`unknown device: ${data.deviceid}`)
-            }
-          }
-        })
-      
-      socket.onClose.addListener((err: any) => {
-        error('web socket closed: ' + err)
-        wsTimer = setTimeout(() => {
-          wsTimer = undefined
-          clearInterval(wsPingInterval)
-          wsPingInterval = undefined
-          openWebSocket()
-        }, 5000)
-      })
-
-      if ( wsPingInterval ) {
-        clearInterval(wsPingInterval)
-      }
-      
-      wsPingInterval = setInterval(async () => {
-        try {
-          debug('sending ping...')
-          await socket.send('ping')
-        } catch ( err ) {
-          error(err)
+    debug('opening websocket...')
+    ws = await wsClient.Connect.create(
+      {
+        appId: APP_ID,
+        at: wsClient.at,
+        region: wsClient.region,
+        userApiKey: wsClient.userApiKey
+      },
+      (ws:any) => {
+        debug('websocket opened')
+      },
+      () => {
+        error('web socket closed')
+        if ( wsClient ) {
+          wsTimer = setTimeout(() => {
+            wsTimer = undefined
+            openWebSocket()
+          }, 5000)
         }
-      }, pingTime)
-    } catch (err:any) {
-      error(err)
-      app.setPluginError(err.message)
-      wsTimer = setTimeout(() => {
-        wsTimer = undefined
-        openWebSocket()
-      }, 5000)
-    }
-  }  
+      },
+      (err: ErrorEvent) => {
+        error(err)
+      },
+      onMessage
+    )
+  }
 
+  function onMessage(ws:WebSocket, event:MessageEvent) {
+    if ( event.data === 'pong' ) {
+      debug("got ws pong")
+      return
+    }
+    
+    let info = JSON.parse(event.data)
+    
+    debug('ws message from server: ' + JSON.stringify(info, null, 2));
+    
+    if ( info.action === 'update' || (info.error === 0 && info.deviceid&& info.params)) {
+      let device = getCachedDevice(info.deviceid)
+      if ( device ) {
+        sendDeltas(device, info.params)
+      }
+    } else if ( info.error !== undefined && info.sequence !== undefined ) {
+      const req = pending[info.sequence]
+      if ( req ) {
+        delete pending[info.sequence]
+        const command = req.command
+        command.action = 'query'
+        command.nonce = nonce()
+        command.sequence = new Date().getTime().toString()
+        command.params = Object.keys(command.params)
+        
+        ws.send(JSON.stringify(command))
+
+        req.cb({
+          state: 'COMPLETED',
+          statusCode: info.error === 0 ? 200 : 400,
+          message: info.reason
+        })
+      }
+    } 
+  }
+  
   function propHandler (
     context: string,
     path: string,
@@ -524,23 +517,22 @@ export default function (app: any) {
     cb: any,
     converter: any = null
   ) {
-    let params: any = converter ? converter(value) : { [prop]: value }
-    cloudConnection
-      .setWSDeviceParams(device.deviceid, params)
-      .then((status: any) => {
-        cloudConnection.getWSDeviceStatus(device.deviceid)
-        debug('got status: %j', status)
-        cb({
-          state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400,
-          message: status.message
-        })
-      })
-      .catch((err: any) => {
-        error(err)
-        app.setPluginError(err.message)
-        cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
-      })
+    try {
+      let params: any = converter ? converter(value) : { [prop]: value }
+      
+      const update = wsClient.Connect.getUpdateState(device.deviceid, params)
+      ws.send(update)
+      const command = JSON.parse(update)
+      
+      pending[command.sequence] = {
+        cb,
+        command
+      }
+    } catch ( err:any ) {
+      error(err)
+      app.setPluginError(err.message)
+      cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
+    }
     return { state: 'PENDING' }
   }
 
@@ -583,23 +575,20 @@ export default function (app: any) {
       if (preset.bright !== 0) {
         params.bright = preset.bright
       }
-      cloudConnection
-        .setWSDeviceParams(device.deviceid, params)
-        .then((status: any) => {
-          cloudConnection.getWSDeviceStatus(device.deviceid)
-          
-          debug('got status: %j', status)
-          cb({
-            state: 'COMPLETED',
-            statusCode: status.status === 'ok' ? 200 : 400,
-            message: status.message
-          })
-        })
-        .catch((err: any) => {
-          error(err)
-          app.setPluginError(err.message)
-          cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
-        })
+      try {
+        const update = wsClient.Connect.getUpdateState(device.deviceid, params)
+        ws.send(update)
+        const command = JSON.parse(update)
+        
+        pending[command.sequence] = {
+          cb,
+          command
+        }
+      } catch ( err:any ) {
+        error(err)
+        app.setPluginError(err.message)
+        cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
+      }
       return { state: 'PENDING' }
     }
   }
@@ -654,7 +643,7 @@ export default function (app: any) {
                 }
               )
 
-              if (device.uiid === l1Light) {
+              if (device.extra.uiid === l1Light) {
                 registerPutProp(device, 'mode', (value: any) => {
                   return { mode: Object.values(l1ModeMap).indexOf(value) + 1 }
                 })
@@ -698,18 +687,32 @@ export default function (app: any) {
 
   async function setBankPowerState (device: any, state: boolean, outlet: any) {
     const stateStr = state ? 'on' : 'off'
+    const stateMap = {
+      switches: [{
+        "switch": stateStr,
+        outlet
+      }]
+    }
     if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
+      const res = await sendZeroConf(device, stateMap)
+
+      if ( res.error === 0 ) {
+        sendDeltas(device, stateMap)
+      }
+      
+      /*
       return lanConnection.setDevicePowerState(
         device.deviceid,
         stateStr,
         outlet + 1
-      )
+        )
+      */
+      return { status: res.error === 0 ? "ok" : "error", message: res.message }
     } else {
-      let res =  await cloudConnection.setWSDevicePowerState(device.deviceid, stateStr, {
-        channel: outlet + 1
-      })
-      cloudConnection.getWSDeviceStatus(device.deviceid)
-      return res
+      const update = wsClient.Connect.getUpdateState(device.deviceid, stateMap)
+      ws.send(update)
+      
+      return { status: "pending", command: JSON.parse(update) }
     }
   }
 
@@ -725,11 +728,18 @@ export default function (app: any) {
     setBankPowerState(device, state, outlet)
       .then((status: any) => {
         debug('got status outlet %d %j: ', outlet, status)
-        cb({
-          state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400,
-          message: status.message
-        })
+        if ( status.status !== 'pending' ) {
+          cb({
+            state: 'COMPLETED',
+            statusCode: status.status === 'ok' ? 200 : 400,
+            message: status.message
+          })
+        } else {
+          pending[status.command.sequence] = {
+            cb,
+            command: status.command
+          }
+        }
       })
       .catch((err: any) => {
         error(err)
@@ -739,14 +749,54 @@ export default function (app: any) {
     return { state: 'PENDING' }
   }
 
+  async function sendZeroConf(device:any, data: any) {
+    let info = getLanInfo(device.deviceid)
+    if ( !info ) {
+      return { error: 1, message:"no lan info" }
+    }
+    
+    return lanClient.zeroconf.switch({
+      ip: info.ip,
+      port: info.port,
+      data,
+      deviceId: device.deviceid,
+      secretKey: crypto.createHash('md5').update(device.devicekey).digest('hex'),
+      encrypt: true,
+      iv: info.iv
+    });
+  }
+
   async function setPowerState (device: any, state: boolean) {
     const stateStr = state ? 'on' : 'off'
     if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
-      return lanConnection.setDevicePowerState(device.deviceid, stateStr)
+      let info = getLanInfo(device.deviceid)
+      if ( !info ) {
+        return { status: "error", message:"no lan info" }
+      }
+
+      const res = await sendZeroConf(device, {
+        switch: stateStr
+      })
+      
+      if ( res.error === 0 ) {
+        sendDeltas(device, { "switch": stateStr })
+      }
+      
+      return { status: res.error === 0 ? "ok" : "error", message: res.mesage }
     } else {
-      let res = await cloudConnection.setWSDevicePowerState(device.deviceid, stateStr)
-      cloudConnection.getWSDeviceStatus(device.deviceid)
-      return res
+      const update = wsClient.Connect.getUpdateState(device.deviceid, {
+        switch: stateStr
+      })
+      ws.send(update)
+      const updateJ = JSON.parse(update)
+      
+      /*
+      wsClient.Connect.updateState(device.deviceid, {
+        switch: stateStr
+      })
+      sendDeltas(device, { "switch": stateStr })
+      */
+      return { status: "pending", command: updateJ }
     }
   }
 
@@ -761,11 +811,18 @@ export default function (app: any) {
     setPowerState(device, state)
       .then((status: any) => {
         debug('set status: %j', status)
-        cb({
-          state: 'COMPLETED',
-          statusCode: status.status === 'ok' ? 200 : 400,
-          message: status.message
-        })
+        if ( status.status !== 'pending' ) {
+          cb({
+            state: 'COMPLETED',
+            statusCode: status.status === 'ok' ? 200 : 400,
+            message: status.message
+          })
+        } else {
+          pending[status.command.sequence] = {
+            cb,
+            command: status.command
+          }
+        }
       })
       .catch((err: any) => {
         error(err)
@@ -814,7 +871,7 @@ export default function (app: any) {
       ) {
         let extras = {}
 
-        if (device.uiid === l1Light) {
+        if (device.extra.uiid === l1Light) {
           extras = {
             type: 'dimmer',
             canDimWhenOff: true
@@ -944,7 +1001,7 @@ export default function (app: any) {
           }
         }
 
-        if (device.uiid === l1Light) {
+        if (device.extra.uiid === l1Light) {
           addValue('mode', l1ModeMap[params.mode])
           addValue('colorR')
           addValue('colorG')
@@ -989,83 +1046,44 @@ export default function (app: any) {
     return devicesCache.find((device: any) => device.deviceid == deviceid)
   }
 
-  function findArpTableEntry (mac: string) {
-    return arpTable.find((entry: any) => entry.mac == mac)
+  function getLanInfo(deviceid: string) {
+    return lanInfo[deviceid]
   }
 
-  function updateIPAddress (deviceid: string, service: any) {
-    if (service.addresses && service.addresses.length > 0) {
-      const device = getCachedDevice(deviceid)
-      if (device) {
-        const mac = device.extra.extra.staMac.toLowerCase()
-        const arp = findArpTableEntry(mac)
-        if (arp) {
-          arp.ip = service.addresses[0]
-        } else {
-          arpTable.push({ ip: service.addresses[0], mac })
-        }
-        saveArpTable()
-      }
-    }
-  }
-
-  function readArpTabel() {
+  function readLanInfo() {
     try {
-      const content = fs.readFileSync(arpTablePath)
-      arpTable = JSON.parse(content)
+      const content = fs.readFileSync(lanInfoPath)
+      lanInfo = JSON.parse(content)
     } catch( err ) {
       error(err)
     }
   }
 
-  function saveArpTable() {
+  function saveLanInfo() {
     try {
-      fs.writeFileSync(arpTablePath, JSON.stringify(arpTable, null, 2))
+      fs.writeFileSync(lanInfoPath, JSON.stringify(lanInfo, null, 2))
+    } catch ( err ) {
+      error(err)
+    }
+  }
+
+  function readDeviceCache() {
+    try {
+      const content = fs.readFileSync(deviceCachePath)
+      devicesCache = JSON.parse(content)
+    } catch( err ) {
+      debug(err)
+    }
+  }
+
+  function saveDeviceCache() {
+    try {
+      fs.writeFileSync(deviceCachePath, JSON.stringify(devicesCache, null, 2))
     } catch ( err ) {
       error(err)
     }
   }
   
-  function dnsdChanged (service: any) {
-    const txt = service.txt || service.txtRecord
-    if (!txt || !txt.id || !txt.iv) {
-      error('invalid mdns record')
-      error(JSON.stringify(service, null, 2))
-    }
-    const deviceid = txt.id
-    const iv = txt.iv
-
-    debug('got dnsd for device %s (id:%s)', service.name, deviceid)
-
-    const device = getCachedDevice(deviceid)
-    if (!device) {
-      const msg = 'new device found, please restart the plugin'
-      error(msg)
-      app.setPluginError(msg)
-      return
-    }
-    updateIPAddress(deviceid, service)
-    try {
-      const info = decryptMessage(txt, device.devicekey, iv)
-      sendDeltas(device, info)
-    } catch (err) {
-      error(err)
-      app.setPluginError('unable to decrypt mdns data')
-    }
-  }
-
-  function decryptMessage (msg: any, deviceKey: string, iv: any) {
-    let encoded = ''
-    for (let i = 1; i < 6; i++) {
-      let part = msg[`data${i}`]
-      if (part) {
-        encoded = encoded + part
-      }
-    }
-
-    return JSON.parse(decryptionData(encoded, deviceKey, iv))
-  }
-
   function getDeviceProps (device: any) {
     return props[`Device ID ${device.deviceid}`] || {}
   }
