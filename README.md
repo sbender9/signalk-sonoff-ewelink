@@ -1,6 +1,22 @@
 # signalk-sonoff-ewelink
 Signal K Plugin For Sonoff/eWeLink devices
 
+To configure authentication, go to [http://ewelink.scottbender.net:8000/login] and enter your ewelink login information. 
+
+The resulting page should look something like:
+
+```
+{
+  "accessToken": "xxxx",
+  "atExpiredTime": 1752868504748,
+  "refreshToken": "xxxxx",
+  "rtExpiredTime": 1755460504807,
+  "region": "us"
+}
+```
+
+Copy and paste this into the plugin configuration.
+
 Support for eWeLink switches running the factory firmware.
 
 Devices must first be added using the eWeLink app.
