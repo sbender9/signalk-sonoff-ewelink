@@ -107,6 +107,7 @@ export default function (app: any) {
     schema: () => {
       const schema: any = {
         type: 'object',
+        required: ['authInfo'],
         properties: {
           authInfo: {
             type: 'string',
@@ -334,6 +335,13 @@ export default function (app: any) {
 
     lanInfoPath = path.join(app.getDataDirPath(), 'lan-info.json')
 
+    if (props.authInfo === undefined) {
+      app.setPluginError(
+        'Please enter your authentication info, See the Plugin README'
+      )
+      return
+    }
+
     const tokenInfo = JSON.parse(props.authInfo)
 
     const logging = {
@@ -360,28 +368,37 @@ export default function (app: any) {
     client.at = tokenInfo.accessToken
     client.setUrl(tokenInfo.region)
 
-    let fam = await client.home.getFamily({})
+    let fam
 
-    if (fam.error !== 0) {
-      error(fam.msg)
-      app.setPluginError(fam.msg)
-    } else if (fam.data.familyList) {
-      families = fam.data.familyList
-    }
+    let connectionFailed = false
+    try {
+      fam = await client.home.getFamily({})
 
-    debug('families: %s', JSON.stringify(fam, null, 2))
+      if (fam.error !== 0) {
+        error(fam.msg)
+        app.setPluginError(fam.msg)
+      } else if (fam.data.familyList) {
+        families = fam.data.familyList
+      }
 
-    let thingList = await client.device.getAllThingsAllPages({
-      familyId: props.family
-    })
-    debug('things: %s', JSON.stringify(thingList, null, 2))
+      debug('families: %s', JSON.stringify(fam, null, 2))
 
-    if (thingList?.error === 0) {
-      devicesCache = thingList.data.thingList.map((x: any) => x.itemData)
-      saveDeviceCache()
-    } else {
-      error(thingList.msg)
-      app.setPluginError(thingList.msg)
+      let thingList = await client.device.getAllThingsAllPages({
+        familyId: props.family
+      })
+      debug('things: %s', JSON.stringify(thingList, null, 2))
+
+      if (thingList?.error === 0) {
+        devicesCache = thingList.data.thingList.map((x: any) => x.itemData)
+        saveDeviceCache()
+      } else {
+        error(thingList.msg)
+        app.setPluginError(thingList.msg)
+      }
+    } catch (err:any) {
+      error(err)
+      app.setPluginError(err.message)
+      connectionFailed = true
     }
 
     if (devicesCache) {
@@ -402,20 +419,23 @@ export default function (app: any) {
       )
     }
 
-    wsClient = new eWeLink.Ws({
-      ...config
-      //logObj: console
-    })
-
     let userApiKey
     if (devicesCache.length > 0) {
       userApiKey = devicesCache[0].apikey
     }
-    wsClient.userApiKey = userApiKey
-    wsClient.at = tokenInfo.accessToken
-    wsClient.region = tokenInfo.region
 
-    openWebSocket()
+    if (!connectionFailed) {
+      wsClient = new eWeLink.Ws({
+        ...config
+        //logObj: console
+      })
+
+      wsClient.userApiKey = userApiKey
+      wsClient.at = tokenInfo.accessToken
+      wsClient.region = tokenInfo.region
+
+      openWebSocket()
+    }
 
     if (props.lanMode) {
       readLanInfo()
@@ -424,7 +444,7 @@ export default function (app: any) {
       }
       lanClient = new eWeLink.Lan({
         selfApikey: userApiKey,
-        logObj: eWeLink.createLogger('lan')
+        logObj: logging
       })
 
       lanClient.discovery((server: any) => {
@@ -528,6 +548,7 @@ export default function (app: any) {
         command
       }
     } catch (err:any) {
+      
       error(err)
       app.setPluginError(err.message)
       cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
@@ -685,35 +706,45 @@ export default function (app: any) {
   }
 
   async function setBankPowerState (device: any, state: boolean, outlet: any) {
-    const stateStr = state ? 'on' : 'off'
-    const stateMap = {
-      switches: [
-        {
-          switch: stateStr,
-          outlet
-        }
-      ]
-    }
-    if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
-      const res = await sendZeroConf(device, stateMap)
-
-      if (res.error === 0) {
-        sendDeltas(device, stateMap)
+    try {
+      const stateStr = state ? 'on' : 'off'
+      const stateMap = {
+        switches: [
+          {
+            switch: stateStr,
+            outlet
+          }
+        ]
       }
+      if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
+        const res = await sendZeroConf(device, stateMap)
 
-      /*
+        if (res.error === 0) {
+          sendDeltas(device, stateMap)
+        }
+
+        /*
       return lanConnection.setDevicePowerState(
         device.deviceid,
         stateStr,
         outlet + 1
         )
       */
-      return { status: res.error === 0 ? 'ok' : 'error', message: res.message }
-    } else {
-      const update = wsClient.Connect.getUpdateState(device.deviceid, stateMap)
-      ws.send(update)
+        return {
+          status: res.error === 0 ? 'ok' : 'error',
+          message: res.message
+        }
+      } else {
+        const update = wsClient.Connect.getUpdateState(
+          device.deviceid,
+          stateMap
+        )
+        ws.send(update)
 
-      return { status: 'pending', command: JSON.parse(update) }
+        return { status: 'pending', command: JSON.parse(update) }
+      }
+    } catch (err:any) {
+      return { status: 'error', message: err.message }
     }
   }
 
@@ -757,7 +788,13 @@ export default function (app: any) {
       return { error: 1, message: 'no lan info' }
     }
 
-    return lanClient.zeroconf.switch({
+    debug('sending zero config to %s: %j', device.deviceid, data)
+
+    const func = data.switches
+      ? lanClient.zeroconf.switches
+      : lanClient.zeroconf.switch
+
+    return func({
       ip: info.ip,
       port: info.port,
       data,
@@ -773,35 +810,39 @@ export default function (app: any) {
 
   async function setPowerState (device: any, state: boolean) {
     const stateStr = state ? 'on' : 'off'
-    if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
-      let info = getLanInfo(device.deviceid)
-      if (!info) {
-        return { status: 'error', message: 'no lan info' }
-      }
+    try {
+      if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
+        let info = getLanInfo(device.deviceid)
+        if (!info) {
+          return { status: 'error', message: 'no lan info' }
+        }
 
-      const res = await sendZeroConf(device, {
-        switch: stateStr
-      })
+        const res = await sendZeroConf(device, {
+          switch: stateStr
+        })
 
-      if (res.error === 0) {
-        sendDeltas(device, { switch: stateStr })
-      }
+        if (res.error === 0) {
+          sendDeltas(device, { switch: stateStr })
+        }
 
-      return { status: res.error === 0 ? 'ok' : 'error', message: res.mesage }
-    } else {
-      const update = wsClient.Connect.getUpdateState(device.deviceid, {
-        switch: stateStr
-      })
-      ws.send(update)
-      const updateJ = JSON.parse(update)
+        return { status: res.error === 0 ? 'ok' : 'error', message: res.mesage }
+      } else {
+        const update = wsClient.Connect.getUpdateState(device.deviceid, {
+          switch: stateStr
+        })
+        ws.send(update)
+        const updateJ = JSON.parse(update)
 
-      /*
+        /*
       wsClient.Connect.updateState(device.deviceid, {
         switch: stateStr
       })
       sendDeltas(device, { "switch": stateStr })
       */
-      return { status: 'pending', command: updateJ }
+        return { status: 'pending', command: updateJ }
+      }
+    } catch (err:any) {
+      return { status: 'error', message: err.message }
     }
   }
 
