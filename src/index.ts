@@ -788,7 +788,7 @@ export default function (app: any) {
     })
   }
 
-  async function setBankPowerState (device: any, state: boolean, outlet: any) {
+  async function setBankPowerState (device: any, state: boolean, outlet: any, cb: any) {
     try {
       const stateStr = state ? 'on' : 'off'
       const stateMap = {
@@ -802,10 +802,28 @@ export default function (app: any) {
       if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
         const res = await sendZeroConf(device, stateMap)
 
-        return {
-          status: res.error === 0 ? 'ok' : 'error',
-          message: res.message
-        }
+        if ( res.error !== 0 ) {
+          return {
+            status: 'error',
+            message: res.message
+          }
+        }        
+
+        setTimeout(() => {
+          var val = app.getSelfPath(getBankSwitchPath(device, outlet))
+          
+          if ( val && val.value == (state ? 1 : 0)) {
+            cb({ state: 'COMPLETED', statusCode: 200 })
+          } else {
+            cb({
+              state: 'COMPLETED',
+              statusCode: 400,
+              message: 'Did not receive change confirmation'
+            })
+          }
+        }, 2000)
+
+        return { status: 'PENDING' }        
       } else {
         const update = wsClient.Connect.getUpdateState(
           device.deviceid,
@@ -813,7 +831,7 @@ export default function (app: any) {
         )
         ws.send(update)
 
-        return { status: 'pending', command: JSON.parse(update) }
+        return { status: 'PENDING', command: JSON.parse(update) }
       }
     } catch (err:any) {
       return { status: 'error', message: err.message }
@@ -830,10 +848,10 @@ export default function (app: any) {
   ) {
     const state =
       value === 1 || value === 'on' || value === 'true' || value === true
-    setBankPowerState(device, state, outlet)
+    setBankPowerState(device, state, outlet, cb)
       .then((status: any) => {
         debug('got status outlet %d %j: ', outlet, status)
-        if (status.status !== 'pending') {
+        if (status.status !== 'PENDING') {
           cb({
             state: 'COMPLETED',
             statusCode: status.status === 'ok' ? 200 : 400,
@@ -880,7 +898,7 @@ export default function (app: any) {
     })
   }
 
-  async function setPowerState (device: any, state: boolean) {
+  async function setPowerState (device: any, state: boolean, cb: any) {
     const stateStr = state ? 'on' : 'off'
     try {
       if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
@@ -893,10 +911,28 @@ export default function (app: any) {
           switch: stateStr
         })
 
-        return {
-          status: res.error === 0 ? 'ok' : 'error',
-          message: res.message
+        if ( res.error !== 0 ) {
+          return {
+            status: 'error',
+            message: res.message
+          }
         }
+        
+        setTimeout(() => {
+          var val = app.getSelfPath(getSwitchPath(device))
+
+          if ( val && val.value == (state ? 1 : 0)) {
+            cb({ state: 'COMPLETED' })
+          } else {
+            cb({
+              state: 'COMPLETED',
+              statusCode: 400,
+              message: 'Did not receive change confirmation'
+            })
+          }
+        }, 2000)
+
+        return { status: 'PENDING' }
       } else {
         const update = wsClient.Connect.getUpdateState(device.deviceid, {
           switch: stateStr
@@ -904,7 +940,7 @@ export default function (app: any) {
         ws.send(update)
         const updateJ = JSON.parse(update)
 
-        return { status: 'pending', command: updateJ }
+        return { status: 'PENDING', command: updateJ }
       }
     } catch (err:any) {
       return { status: 'error', message: err.message }
@@ -919,10 +955,10 @@ export default function (app: any) {
     cb: any
   ) {
     const state = value === 1 || value === 'on' || value === 'true'
-    setPowerState(device, state)
+    setPowerState(device, state, cb)
       .then((status: any) => {
         debug('set status: %j', status)
-        if (status.status !== 'pending') {
+        if (status.status !== 'PENDING') {
           cb({
             state: 'COMPLETED',
             statusCode: status.status === 'ok' ? 200 : 400,
