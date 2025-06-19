@@ -65,16 +65,6 @@ export default function (app: any) {
   const plugin: Plugin = {
     start: function (properties: any) {
       props = properties
-      if (
-        !props.userName ||
-        props.userName.length === 0 ||
-        !props.password ||
-        props.password.length === 0
-      ) {
-        app.setPluginError('please configure username and password')
-        return
-      }
-
       openConnection()
     },
 
@@ -364,16 +354,20 @@ export default function (app: any) {
     client.setUrl(tokenInfo.region)
     client.appSecret = APP_SECRET
 
-    const currentTime = (new Date()).getTime();
+    const currentTime = new Date().getTime()
 
-    /*
-    //if (tokenInfo.atExpiredTime <= currentTime)
+    if (tokenInfo.atExpiredTime <= currentTime)
     {
+      debug('token has expired, refreshing...')
       const resp = await client.user.refreshToken({rt: tokenInfo.refreshToken})
       if ( resp.error !== 0 ) {
+        app.error(`error refreshing token: ${resp.msg}`)
       } else {
+        debug('updating token info')
+        
         tokenInfo.accessToken = resp.data.at
         tokenInfo.refreshToken = resp.data.rt
+        client.at = resp.data.at
 
         if (resp.data.atExpiredTime) {
           tokenInfo.atExpiredTime = resp.data.atExpiredTime;
@@ -385,14 +379,16 @@ export default function (app: any) {
         } else {
           tokenInfo.rtExpiredTime = currentTime + (24*60*60*1000*59);
         }
-
-        props.authInfo = tokenInfo
-        app.savePluginOptions(id, props)
+        
+        props.authInfo = JSON.stringify(tokenInfo, null, 2)
+        app.savePluginOptions(props, (err:any) => {
+          if ( err ) {
+            app.error(err)
+          }
+        })
       }
-      }
-      */
-
-
+    }
+    
     let fam
 
     let connectionFailed = false
@@ -540,8 +536,8 @@ export default function (app: any) {
         const deviceProps = getDeviceProps(device)
         if (
           !deviceProps ||
-            typeof deviceProps === 'undefined' ||
-            deviceProps.enabled
+          typeof deviceProps === 'undefined' ||
+          deviceProps.enabled
         ) {
           sendDeltas(device, info.params)
         }
@@ -584,14 +580,18 @@ export default function (app: any) {
     if (!device) {
       return
     }
-    
+
     try {
-      const info = lanClient.decrypt(txt.data1, crypto
-                                     .createHash('md5')
-                                     .update(device.devicekey)
-                                     .digest('hex'), iv)
+      const info = lanClient.decrypt(
+        txt.data1,
+        crypto
+          .createHash('md5')
+          .update(device.devicekey)
+          .digest('hex'),
+        iv
+      )
       sendDeltas(device, info)
-    } catch (err) {
+    } catch (err:any) {
       error(err)
       app.setPluginError('unable to decrypt mdns data')
     }
@@ -632,7 +632,6 @@ export default function (app: any) {
         command
       }
     } catch (err:any) {
-      
       error(err)
       app.setPluginError(err.message)
       cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
@@ -897,7 +896,7 @@ export default function (app: any) {
         return {
           status: res.error === 0 ? 'ok' : 'error',
           message: res.message
-        }        
+        }
       } else {
         const update = wsClient.Connect.getUpdateState(device.deviceid, {
           switch: stateStr
@@ -929,7 +928,7 @@ export default function (app: any) {
             statusCode: status.status === 'ok' ? 200 : 400,
             message: status.message
           })
-        } else if ( status.command ) {
+        } else if (status.command) {
           pending[status.command.sequence] = {
             cb,
             command: status.command
@@ -1164,7 +1163,7 @@ export default function (app: any) {
     try {
       const content = fs.readFileSync(lanInfoPath)
       lanInfo = JSON.parse(content)
-    } catch (err) {
+    } catch (err:any) {
       error(err)
     }
   }
@@ -1172,7 +1171,7 @@ export default function (app: any) {
   function saveLanInfo () {
     try {
       fs.writeFileSync(lanInfoPath, JSON.stringify(lanInfo, null, 2))
-    } catch (err) {
+    } catch (err:any) {
       error(err)
     }
   }
