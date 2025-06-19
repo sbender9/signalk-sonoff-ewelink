@@ -27,12 +27,6 @@ const nonce = (size: Number = 8): string =>
 
 const fetch = require('node-fetch')
 
-let mdns: any
-
-try {
-  mdns = require('mdns')
-} catch (err) {}
-
 //the registered one
 const APP_ID = 'SsgewdgY5EHXEFIx6wAsmqf7dBE71c8i'
 const APP_SECRET = 'oqqaAV5qMu2AWRqkl6Df2GltfkDxuKse'
@@ -66,6 +60,7 @@ export default function (app: any) {
   let wsTimer: any
   let wsPingInterval: any
   let pending: any = {}
+  let browser: any
 
   const plugin: Plugin = {
     start: function (properties: any) {
@@ -367,6 +362,36 @@ export default function (app: any) {
 
     client.at = tokenInfo.accessToken
     client.setUrl(tokenInfo.region)
+    client.appSecret = APP_SECRET
+
+    const currentTime = (new Date()).getTime();
+
+    /*
+    //if (tokenInfo.atExpiredTime <= currentTime)
+    {
+      const resp = await client.user.refreshToken({rt: tokenInfo.refreshToken})
+      if ( resp.error !== 0 ) {
+      } else {
+        tokenInfo.accessToken = resp.data.at
+        tokenInfo.refreshToken = resp.data.rt
+
+        if (resp.data.atExpiredTime) {
+          tokenInfo.atExpiredTime = resp.data.atExpiredTime;
+        } else {
+          tokenInfo.atExpiredTime = currentTime + (24*60*60*1000*29);
+        }
+        if (resp.data.rtExpiredTime) {
+          tokenInfo.rtExpiredTime = resp.data.rtExpiredTime;
+        } else {
+          tokenInfo.rtExpiredTime = currentTime + (24*60*60*1000*59);
+        }
+
+        props.authInfo = tokenInfo
+        app.savePluginOptions(id, props)
+      }
+      }
+      */
+
 
     let fam
 
@@ -457,6 +482,13 @@ export default function (app: any) {
         saveLanInfo()
         //console.log(JSON.stringify(lanInfo, null, 2))
       })
+
+      debug('starting dnsd browser...')
+      browser = dnssd.Browser(dnssd.tcp('ewelink'))
+      browser
+        .on('serviceChanged', dnsdChanged)
+        .on('serviceUp', dnsdChanged)
+        .start()
     }
   }
 
@@ -473,6 +505,7 @@ export default function (app: any) {
         debug('websocket opened')
       },
       () => {
+        ws = undefined
         error('web socket closed')
         if (wsClient) {
           wsTimer = setTimeout(() => {
@@ -504,7 +537,16 @@ export default function (app: any) {
     ) {
       let device = getCachedDevice(info.deviceid)
       if (device) {
-        sendDeltas(device, info.params)
+        const deviceProps = getDeviceProps(device)
+        if (
+          !deviceProps ||
+            typeof deviceProps === 'undefined' ||
+            deviceProps.enabled
+        ) {
+          sendDeltas(device, info.params)
+        }
+      } else {
+        error(`unknown device: ${info.deviceid}`)
       }
     } else if (info.error !== undefined && info.sequence !== undefined) {
       const req = pending[info.sequence]
@@ -526,6 +568,48 @@ export default function (app: any) {
       }
     }
   }
+
+  function dnsdChanged (service: any) {
+    const txt = service.txt || service.txtRecord
+    if (!txt || !txt.id || !txt.iv) {
+      error('invalid mdns record')
+      error(JSON.stringify(service, null, 2))
+    }
+    const deviceid = txt.id
+    const iv = txt.iv
+
+    debug('got dnsd for device %s (id:%s)', service.name, deviceid)
+
+    const device = getCachedDevice(deviceid)
+    if (!device) {
+      return
+    }
+    
+    try {
+      const info = lanClient.decrypt(txt.data1, crypto
+                                     .createHash('md5')
+                                     .update(device.devicekey)
+                                     .digest('hex'), iv)
+      sendDeltas(device, info)
+    } catch (err) {
+      error(err)
+      app.setPluginError('unable to decrypt mdns data')
+    }
+  }
+
+  /*
+  function decryptMessage (msg: any, deviceKey: string, iv: any) {
+    let encoded = ''
+    for (let i = 1; i < 6; i++) {
+      let part = msg[`data${i}`]
+      if (part) {
+        encoded = encoded + part
+      }
+    }
+
+    return JSON.parse(decryptionData(encoded, deviceKey, iv))
+    }
+    */
 
   function propHandler (
     context: string,
@@ -719,17 +803,6 @@ export default function (app: any) {
       if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
         const res = await sendZeroConf(device, stateMap)
 
-        if (res.error === 0) {
-          sendDeltas(device, stateMap)
-        }
-
-        /*
-      return lanConnection.setDevicePowerState(
-        device.deviceid,
-        stateStr,
-        outlet + 1
-        )
-      */
         return {
           status: res.error === 0 ? 'ok' : 'error',
           message: res.message
@@ -821,11 +894,10 @@ export default function (app: any) {
           switch: stateStr
         })
 
-        if (res.error === 0) {
-          sendDeltas(device, { switch: stateStr })
-        }
-
-        return { status: res.error === 0 ? 'ok' : 'error', message: res.mesage }
+        return {
+          status: res.error === 0 ? 'ok' : 'error',
+          message: res.message
+        }        
       } else {
         const update = wsClient.Connect.getUpdateState(device.deviceid, {
           switch: stateStr
@@ -833,12 +905,6 @@ export default function (app: any) {
         ws.send(update)
         const updateJ = JSON.parse(update)
 
-        /*
-      wsClient.Connect.updateState(device.deviceid, {
-        switch: stateStr
-      })
-      sendDeltas(device, { "switch": stateStr })
-      */
         return { status: 'pending', command: updateJ }
       }
     } catch (err:any) {
@@ -863,7 +929,7 @@ export default function (app: any) {
             statusCode: status.status === 'ok' ? 200 : 400,
             message: status.message
           })
-        } else {
+        } else if ( status.command ) {
           pending[status.command.sequence] = {
             cb,
             command: status.command
