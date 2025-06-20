@@ -592,8 +592,10 @@ export default function (app: any) {
       )
       sendDeltas(device, info)
     } catch (err:any) {
-      error(err)
-      app.setPluginError('unable to decrypt mdns data')
+      if ( !(err instanceof SyntaxError) ) {
+        error(err)
+      }
+      //app.setPluginError('unable to decrypt mdns data')
     }
   }
 
