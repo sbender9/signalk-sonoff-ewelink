@@ -857,7 +857,7 @@ export default function (app: any) {
             statusCode: status.status === 'ok' ? 200 : 400,
             message: status.message
           })
-        } else {
+        } else if ( pending.command ) {
           pending[status.command.sequence] = {
             cb,
             command: status.command
