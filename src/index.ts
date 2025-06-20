@@ -302,7 +302,7 @@ export default function (app: any) {
 
   async function openConnection () {
     /*    
-    let token = '552c07ac410dccf046bf23c18248a3b34ca6763a'
+    let token = '5sdkflkfdfdkllk'
     const resp = await fetch(`https://us-apia.coolkit.cc/v2/family`, {
       headers: {
         "X-CK-Appid": APP_ID,
@@ -356,39 +356,40 @@ export default function (app: any) {
 
     const currentTime = new Date().getTime()
 
-    if (tokenInfo.atExpiredTime <= currentTime)
-    {
+    if (tokenInfo.atExpiredTime <= currentTime) {
       debug('token has expired, refreshing...')
-      const resp = await client.user.refreshToken({rt: tokenInfo.refreshToken})
-      if ( resp.error !== 0 ) {
+      const resp = await client.user.refreshToken({
+        rt: tokenInfo.refreshToken
+      })
+      if (resp.error !== 0) {
         app.error(`error refreshing token: ${resp.msg}`)
       } else {
         debug('updating token info')
-        
+
         tokenInfo.accessToken = resp.data.at
         tokenInfo.refreshToken = resp.data.rt
         client.at = resp.data.at
 
         if (resp.data.atExpiredTime) {
-          tokenInfo.atExpiredTime = resp.data.atExpiredTime;
+          tokenInfo.atExpiredTime = resp.data.atExpiredTime
         } else {
-          tokenInfo.atExpiredTime = currentTime + (24*60*60*1000*29);
+          tokenInfo.atExpiredTime = currentTime + 24 * 60 * 60 * 1000 * 29
         }
         if (resp.data.rtExpiredTime) {
-          tokenInfo.rtExpiredTime = resp.data.rtExpiredTime;
+          tokenInfo.rtExpiredTime = resp.data.rtExpiredTime
         } else {
-          tokenInfo.rtExpiredTime = currentTime + (24*60*60*1000*59);
+          tokenInfo.rtExpiredTime = currentTime + 24 * 60 * 60 * 1000 * 59
         }
-        
+
         props.authInfo = JSON.stringify(tokenInfo, null, 2)
-        app.savePluginOptions(props, (err:any) => {
-          if ( err ) {
+        app.savePluginOptions(props, (err: any) => {
+          if (err) {
             app.error(err)
           }
         })
       }
     }
-    
+
     let fam
 
     let connectionFailed = false
@@ -416,7 +417,7 @@ export default function (app: any) {
         error(thingList.msg)
         app.setPluginError(thingList.msg)
       }
-    } catch (err:any) {
+    } catch (err) {
       error(err)
       app.setPluginError(err.message)
       connectionFailed = true
@@ -542,7 +543,7 @@ export default function (app: any) {
           sendDeltas(device, info.params)
         }
       } else {
-        error(`unknown device: ${info.deviceid}`)
+        debug(`unknown device: ${info.deviceid}`)
       }
     } else if (info.error !== undefined && info.sequence !== undefined) {
       const req = pending[info.sequence]
@@ -591,8 +592,8 @@ export default function (app: any) {
         iv
       )
       sendDeltas(device, info)
-    } catch (err:any) {
-      if ( !(err instanceof SyntaxError) ) {
+    } catch (err) {
+      if (!(err instanceof SyntaxError)) {
         error(err)
       }
       //app.setPluginError('unable to decrypt mdns data')
@@ -633,7 +634,7 @@ export default function (app: any) {
         cb,
         command
       }
-    } catch (err:any) {
+    } catch (err) {
       error(err)
       app.setPluginError(err.message)
       cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
@@ -689,7 +690,7 @@ export default function (app: any) {
           cb,
           command
         }
-      } catch (err:any) {
+      } catch (err) {
         error(err)
         app.setPluginError(err.message)
         cb({ state: 'COMPLETED', statusCode: 400, message: err.message })
@@ -790,7 +791,12 @@ export default function (app: any) {
     })
   }
 
-  async function setBankPowerState (device: any, state: boolean, outlet: any, cb: any) {
+  async function setBankPowerState (
+    device: any,
+    state: boolean,
+    outlet: any,
+    cb: any
+  ) {
     try {
       const stateStr = state ? 'on' : 'off'
       const stateMap = {
@@ -804,17 +810,17 @@ export default function (app: any) {
       if (props.lanMode && !cloudOnlyByDevice[device.deviceid]) {
         const res = await sendZeroConf(device, stateMap)
 
-        if ( res.error !== 0 ) {
+        if (res.error !== 0) {
           return {
             status: 'error',
             message: res.message
           }
-        }        
+        }
 
         setTimeout(() => {
           var val = app.getSelfPath(getBankSwitchPath(device, outlet))
-          
-          if ( val && val.value == (state ? 1 : 0)) {
+
+          if (val && val.value == (state ? 1 : 0)) {
             cb({ state: 'COMPLETED', statusCode: 200 })
           } else {
             cb({
@@ -825,7 +831,7 @@ export default function (app: any) {
           }
         }, 2000)
 
-        return { status: 'PENDING' }        
+        return { status: 'PENDING' }
       } else {
         const update = wsClient.Connect.getUpdateState(
           device.deviceid,
@@ -835,7 +841,7 @@ export default function (app: any) {
 
         return { status: 'PENDING', command: JSON.parse(update) }
       }
-    } catch (err:any) {
+    } catch (err) {
       return { status: 'error', message: err.message }
     }
   }
@@ -859,7 +865,7 @@ export default function (app: any) {
             statusCode: status.status === 'ok' ? 200 : 400,
             message: status.message
           })
-        } else if ( pending.command ) {
+        } else if (pending.command) {
           pending[status.command.sequence] = {
             cb,
             command: status.command
@@ -913,17 +919,17 @@ export default function (app: any) {
           switch: stateStr
         })
 
-        if ( res.error !== 0 ) {
+        if (res.error !== 0) {
           return {
             status: 'error',
             message: res.message
           }
         }
-        
+
         setTimeout(() => {
           var val = app.getSelfPath(getSwitchPath(device))
 
-          if ( val && val.value == (state ? 1 : 0)) {
+          if (val && val.value == (state ? 1 : 0)) {
             cb({ state: 'COMPLETED' })
           } else {
             cb({
@@ -944,7 +950,7 @@ export default function (app: any) {
 
         return { status: 'PENDING', command: updateJ }
       }
-    } catch (err:any) {
+    } catch (err) {
       return { status: 'error', message: err.message }
     }
   }
@@ -1201,7 +1207,7 @@ export default function (app: any) {
     try {
       const content = fs.readFileSync(lanInfoPath)
       lanInfo = JSON.parse(content)
-    } catch (err:any) {
+    } catch (err) {
       error(err)
     }
   }
@@ -1209,7 +1215,7 @@ export default function (app: any) {
   function saveLanInfo () {
     try {
       fs.writeFileSync(lanInfoPath, JSON.stringify(lanInfo, null, 2))
-    } catch (err:any) {
+    } catch (err) {
       error(err)
     }
   }

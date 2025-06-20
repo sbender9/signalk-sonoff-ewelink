@@ -9,6 +9,7 @@
     "esModuleInterop": true,
     "noImplicitAny": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "useUnknownInCatchVariables": false
   }
 }
