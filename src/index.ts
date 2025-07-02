@@ -1185,13 +1185,15 @@ export default function (app: any) {
     }
 
     if (values) {
-      app.handleMessage(plugin.id, {
+      let delta = {
         updates: [
           {
             values
           }
         ]
-      })
+      }
+      debug('sending delta %j', delta)
+      app.handleMessage(plugin.id, delta)
     }
   }
 
