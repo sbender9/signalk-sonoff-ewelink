@@ -1,10 +1,15 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "ES2020",
     "module": "commonjs",
     "declaration": true,
     "rootDir": "src",
     "outDir": "./dist",
-    "strict": true
+    "strict": true,
+    "esModuleInterop": true,
+    "noImplicitAny": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "useUnknownInCatchVariables": false
   }
 }
